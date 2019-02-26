@@ -111,28 +111,38 @@ class mpnn(Layer):
             #TO DO: 确定形状
             #此处形状待定，暂时先按下面的来。
 
-            self.Vars["Awij"]=tf.Variable(initial_value=tf.truncated_normal(shape=[placeholders['feature_num'],placeholders['edge_type']], mean=0, stddev=1), name="Awij")
+            self.Vars["Awij"]=tf.Variable(initial_value=tf.truncated_normal(shape=[placeholders['ability_num'],placeholders['edge_type']], mean=0, stddev=1), name="Awij")
             #在这里的形状是（ability类别*edge类别），即10*2
 
-            self.Vars["Awij2"]=tf.Variable(initial_value=tf.truncated_normal(shape=[1,placeholders['feature_num']], mean=0, stddev=1), name="Awij2")
+            self.Vars["Awij2"]=tf.Variable(initial_value=tf.truncated_normal(shape=[1,placeholders['ability_num']], mean=0, stddev=1), name="Awij2")
             #在这里的形状是（1*每个人的ability类别），此处是1*10
 
         #if self.logging:
         #    self._log_vars()
 
     def _call(self, inputs):
-        #进行调用，会把输入图给导进来，然后调用下面的更新函数
+        # 进行调用，会把输入图给导进来，然后调用下面的更新函数
+        # TODO : 
+        # 1.务必确定初始的a,t形状
+        # 2.务必确定更新函数的写法，有些复杂。
         
-        for i in range(update_step):
-            #更新函数的实现
-            for worker in range(self.input_dim[0])：
-                update_a=tf.matmul(update_t,self.Vars["Awij"])
-            for task in range(self.input_dim[1]):
-                update_t=tf.matmul(update_a,self.Vars["Awij2"])
-                #TO DO :这个地方要确定咋写，尤其是选择正确的label进行加成叠加的过程咋写
-                
-            continue
-        output=[update_a, update_t]
+        # 难点：
+        # **更新a：是否要把不同label的累加矩阵算上
+        # **更新t：确定只加正确类的label的权重
+
+        first_a=tf.random_normal(shape=)
+        def cond(i,update_a, update_t):
+            return i<self.step
+        def body(i,update_a,update_t):
+            
+            #TO DO:这个地方维度计算没有敲定，还有转置等操作要做
+
+            update_t=tf.matmul(update_a,self.Vars["Awij"])
+            update_a=tf.matmul(update_t,self.Vars["Awij2"])
+            return i+1, update_a, update_t
+
+        i,final_a,final_t=tf.while_loop(cond, body, [0,first_a, first_t])
+        output=[final_a,final_t]
 
         return output
 
