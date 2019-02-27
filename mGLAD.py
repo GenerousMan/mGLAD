@@ -3,12 +3,12 @@
 # 2.edge类型，形状为1，其值设为x，代表有x个不同label的可能
 # 3.label信息，形状待定
 import numpy as np
-
+import tensorflow as tf
 import yaml
 
 def Cal_ProbLoss(predict_edges, ori_edges):
-	#predict_edges' shape:(K*x)
-	return
+    #predict_edges' shape:(K*x)
+    return
 
 def read_BlueBirds():
     #构建整幅图，39*104
@@ -37,8 +37,8 @@ def read_BlueBirds():
     return Graph
 
 class mGLAD(Model):
-	# inputs: placeholders['edges'] 形状为K
-	# outputs: 形状为task节点数*总类数x
+    # inputs: placeholders['edges'] 形状为K
+    # outputs: 形状为task节点数*总类数x
 
     def __init__(self, placeholders, input_dim, **kwargs):
         super(mGLAD, self).__init__(**kwargs)
@@ -74,15 +74,15 @@ class mGLAD(Model):
 
         print("[ model ] Building mGLAD model......")
         print("[ model ] Appending MPNN layer......")
-        self.layers.append(MPNN(input_dim = self.input_dim,
-        						output_dim = FLAGS.hidden1,
-        						placeholders = self.placeholders,
-        						update_step = 5,
-        						Logging = self.logging))
+        self.layers.append(mpnn(input_dim = self.input_dim,
+                                output_dim = FLAGS.hidden1,
+                                placeholders = self.placeholders,
+                                update_step = 5,
+                                Logging = self.logging))
         print("[ model ] Appending Decoder layer......")
         self.layers.append(Decoder(input_dim = FLAGS.hidden1,
-        							output_dim = self.output_dim,
-        							placeholders = self.placeholders))
+                                    output_dim = self.output_dim,
+                                    placeholders = self.placeholders))
         print("[ model ] Build finished.")
 
     def predict(self):
@@ -111,7 +111,7 @@ class mpnn(Layer):
             #TO DO: 确定形状
             #此处形状待定，暂时先按下面的来。
 
-            self.Vars["Awij"]=tf.Variable(initial_value=tf.truncated_normal(shape=[placeholders['ability_num'],placeholders['edge_type']], mean=0, stddev=1), name="Awij")
+            self.Vars["Awij"]=tf.Variable(initial_value=tf.truncated_normal(shape=[placeholders['edge_type'],placeholders['ability_num'],placeholders['edge_type']], mean=0, stddev=1), name="Awij")
             #在这里的形状是（ability类别*edge类别），即10*2
 
             self.Vars["Awij2"]=tf.Variable(initial_value=tf.truncated_normal(shape=[1,placeholders['ability_num']], mean=0, stddev=1), name="Awij2")
@@ -130,15 +130,45 @@ class mpnn(Layer):
         # **更新a：是否要把不同label的累加矩阵算上
         # **更新t：确定只加正确类的label的权重
 
-        first_a=tf.random_normal(shape=)
+        first_a = tf.random_normal(shape=[self.input_dim[0], self.placeholders['ability_num']], stddev=1, seed=1)
+        first_t = tf.random_normal(shape=[self.input_dim[1], self.placeholders['edge_type']], stddev=1, seed=1)
+
         def cond(i,update_a, update_t):
             return i<self.step
-        def body(i,update_a,update_t):
-            
-            #TO DO:这个地方维度计算没有敲定，还有转置等操作要做
 
-            update_t=tf.matmul(update_a,self.Vars["Awij"])
-            update_a=tf.matmul(update_t,self.Vars["Awij2"])
+        def body(i,update_a,update_t):
+            def cond_a(i,update_a,update_t):
+                # 判断a的更新进行完毕与否
+
+                return
+
+            def cond_t(i,update_a,update_t):
+                # 判断t的更新进行完毕与否
+
+                return
+
+            def body_a(i,update_a,update_t):
+                # 用于循环迭代每一轮a的更新
+                def cond_tau(i,update_a,update_t):
+
+
+                    return
+
+                def body_tau(i,update_a,update_t):
+                    # 用于针对每一个worker的ability，都根据原始label选择对应矩阵相乘
+
+                    return
+
+                return
+
+            def body_t(i,update_a,update_t):
+                # 用于循环迭代每一轮t的更新
+
+                return
+
+            #TO DO:这个地方维度计算没有敲定，还有转置等操作要做
+            update_t=tf.while_loop(cond_a, body_a, [0,update_a, update_t])
+            update_a=tf.while_loop(cond_t, body_t, [0,update_a, update_t])
             return i+1, update_a, update_t
 
         i,final_a,final_t=tf.while_loop(cond, body, [0,first_a, first_t])
@@ -147,18 +177,18 @@ class mpnn(Layer):
         return output
 
 class Decoder(Layer):
-	def __init__(self, input_dim, output_dim, placeholders, **kwargs):
-		super(Decoder, self).__init__(**kwargs)
-		self.input_dim=input_dim
-		self.output_dim=output_dim
-		self.placeholders=placeholders
+    def __init__(self, input_dim, output_dim, placeholders, **kwargs):
+        super(Decoder, self).__init__(**kwargs)
+        self.input_dim=input_dim
+        self.output_dim=output_dim
+        self.placeholders=placeholders
 
-	# def _call(self, inputs):
-        	
- #        	#进行调用.此处暂定用把它与转置相乘求和的办法
+    def _call(self, inputs):
+            return
+            #进行调用.此处暂定用把它与转置相乘求和的办法
 
 if __name__ == '__main__':
     BB_Graph=read_BlueBirds()
 
     #placeholders=construct_placeholders(np.randint(2,size=(10,10)))
-	#mpnn_test=mpnn([10,10],[10,10,20],placeholders,5)
+    #mpnn_test=mpnn([10,10],[10,10,20],placeholders,5)
