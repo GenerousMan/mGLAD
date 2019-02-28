@@ -6,9 +6,31 @@ import numpy as np
 import tensorflow as tf
 import yaml
 
-def Cal_ProbLoss(predict_edges, ori_edges):
+def Cal_ProbLoss(loss,P,edges):
     #predict_edges' shape:(K*x)
-    return
+    
+    def cond_worker(i,loss_now):
+        #判断第i个worker
+
+        return i < edges.shape[0]
+    def body_worker(i,loss_now):
+        #对loss进行累加运算
+        def cond_task(j,loss_now):
+            #判断第j个task
+
+            return j<edges.shape[1]
+        def body_task(j,loss_now):
+            #对loss进行累加运算
+            loss=tf.add(loss,P[i][j][edges[i][j]])
+
+            return j+1, loss 
+        loss=tf.while_loop(cond_task,body_task,[0,loss])
+
+        return i+1, loss 
+
+    loss=tf.while_loop(cond_worker,body_worker,[0,loss])
+
+    return loss
 
 def read_BlueBirds():
     #构建整幅图，39*104
@@ -64,11 +86,10 @@ class mGLAD(Model):
         #但是原文意思是要计算概率，也就是每条边和原本相同的值的概率
         #TO DO：确定outputs的输出形状，如果原始边连接矩阵的形状是K，总共有x个label，那就应该是K*x，然后softmax找原始Label概率
 
-        self.loss += Cal_ProbLoss(self.outputs, self.placeholders['edges'])
+        self.loss += Cal_ProbLoss(self.loss, self.outputs, self.placeholders['edges'])
 
     def _accuracy(self):
-        self.accuracy = masked_accuracy(self.outputs, self.placeholders['edges'],
-                                        self.placeholders['labels_mask'])
+        self.accuracy =  tf.reduce_mean(tf.equal(tf.argmax(self.outputs, 2), self.placeholders['edges']))
 
     def _build(self):
 
@@ -161,7 +182,7 @@ class mpnn(Layer):
                     A2_label=tf.cond(inputs[j][jj]==0,self.Vars["Awij2"][0],self.Vars["Awij2"][1])
                     # 根据不同label 选用不同的A2
 
-                    update_a[j]=tf.add(update_a[j],tf.mul(now_t, A2_label))
+                    update_a[j]=tf.add(update_a[j],tf.multiply(now_t, A2_label))
                     #将update_a的第j个worker的得分进行一个累加计算
 
                     return jj+1, update_a, update_t
@@ -183,7 +204,7 @@ class mpnn(Layer):
                     # 根据不同label取用不同矩阵，存在本次A_label中
 
                     update_t[k]=tf.add(update_t[k], # 求和的过程，从kk=0到kk=最后一个worker的序号，都给加上
-                        tf.mul(update_a[kk],A_label))
+                        tf.multiply(update_a[kk],A_label))
                     # 1*10 x 10*2  = 1*2
                     return kk + 1, update_a, update_t
                 _, update_a, update_t = tf.while_loop(cond_aj, body_aj, [0,update_a, update_t])
@@ -253,7 +274,7 @@ class Decoder(Layer):
                         tau_prob = task_feature[j][l]
                         prob_part1 = tf.sigmoid(
                                             tf.add(
-                                                tf.mul(worker_feature[i],self.Vars["W"]),
+                                                tf.multiply(worker_feature[i],self.Vars["W"]),
                                                 self.Vars["b"])
                                         )
                         prob_part2 = tf.divide(
@@ -271,10 +292,16 @@ class Decoder(Layer):
                                             )
                                         )
                         return l+1, P
-                    return j+1, P
-                return i+1, P
+                    _, P = tf.while_loop(cond_label,body_label,[0,P])
 
-            #进行调用.此处暂定用把它与转置相乘求和的办法
+                    return j+1, P
+                _,P = tf.while_loop(cond_task,body_task,[0,P])
+
+                return i+1, P
+            _, P= tf.while_loop(cond_worker,body_worker,[0,self.P])
+
+            return P
+            #进行调用
 
 if __name__ == '__main__':
     BB_Graph=read_BlueBirds()
