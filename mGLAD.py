@@ -166,6 +166,8 @@ class mpnn(Layer):
 
                     return jj+1, update_a, update_t
 
+                _, update_a, update_t = tf.while_loop(cond_tau, body_tau, [0,update_a, update_t])
+
                 return j+1, update_a, update_t 
 
             def body_t(k,update_a,update_t):
@@ -184,19 +186,20 @@ class mpnn(Layer):
                         tf.mul(update_a[kk],A_label))
                     # 1*10 x 10*2  = 1*2
                     return kk + 1, update_a, update_t
-                
+                _, update_a, update_t = tf.while_loop(cond_aj, body_aj, [0,update_a, update_t])
+
                 return k + 1, update_a, update_t
 
             # TO DO:这个地方维度计算没有敲定，还有转置等操作要做
-            update_t=tf.while_loop(cond_a, body_a, [0,update_a, update_t])
+            _, update_a, update_t = tf.while_loop(cond_a, body_a, [0,update_a, update_t])
             # 对t进行一轮更新
 
-            update_a=tf.while_loop(cond_t, body_t, [0,update_a, update_t])
+            _, update_a, update_t = tf.while_loop(cond_t, body_t, [0,update_a, update_t])
             # 对a进行一轮更新
 
             return i+1, update_a, update_t
 
-        i,final_a,final_t=tf.while_loop(cond, body, [0,first_a, first_t])
+        i, final_a, final_t=tf.while_loop(cond, body, [0,first_a, first_t])
         output=[final_a,final_t]
 
         return output
