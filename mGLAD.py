@@ -114,7 +114,7 @@ class mpnn(Layer):
             self.Vars["Awij"]=tf.Variable(initial_value=tf.truncated_normal(shape=[placeholders['edge_type'],placeholders['ability_num'],placeholders['edge_type']], mean=0, stddev=1), name="Awij")
             #在这里的形状是（ability类别*edge类别），即10*2
 
-            self.Vars["Awij2"]=tf.Variable(initial_value=tf.truncated_normal(shape=[1,placeholders['ability_num']], mean=0, stddev=1), name="Awij2")
+            self.Vars["Awij2"]=tf.Variable(initial_value=tf.truncated_normal(shape=[placeholders['edge_type'], 1, placeholders['ability_num']], mean=0, stddev=1), name="Awij2")
             #在这里的形状是（1*每个人的ability类别），此处是1*10
 
         #if self.logging:
@@ -156,19 +156,44 @@ class mpnn(Layer):
 
                 def body_tau(jj,update_a,update_t):
                     # 用于针对每一个worker的ability，都根据原始label选择对应矩阵相乘
-                        
-                    return
+                    now_t=update_t[jj][inputs[j][jj]] # 根据这条边是啥取用指定tau里的值，维度 1*1
+                    
+                    A2_label=tf.cond(inputs[j][jj]==0,self.Vars["Awij2"][0],self.Vars["Awij2"][1])
+                    # 根据不同label 选用不同的A2
 
-                return
+                    update_a[j]=tf.add(update_a[j],tf.mul(now_t, A2_label))
+                    #将update_a的第j个worker的得分进行一个累加计算
+
+                    return jj+1, update_a, update_t
+
+                return j+1, update_a, update_t 
 
             def body_t(k,update_a,update_t):
-                # 用于循环迭代每一轮t的更新
+                
+                # 用于循环迭代每一轮t的更新,迭代task个数次，是第二个维度
 
-                return
+                def cond_aj(kk,update_a,update_t):
+                    # 用于判断是否考虑到了每一个worker
+                    return kk < self.input_dim[0]
+
+                def body_aj(kk,update_a,update_t):
+                    A_label=tf.cond(inputs[kk][k]==0,self.Vars["Awij"][0],self.Vars["Awij"][1])
+                    # 根据不同label取用不同矩阵，存在本次A_label中
+
+                    update_t[k]=tf.add(update_t[k], # 求和的过程，从kk=0到kk=最后一个worker的序号，都给加上
+                        tf.mul(update_a[kk],A_label))
+                    # 1*10 x 10*2  = 1*2
+                    return kk + 1, update_a, update_t
+                
+                return k + 1, update_a, update_t
 
             # TO DO:这个地方维度计算没有敲定，还有转置等操作要做
             update_t=tf.while_loop(cond_a, body_a, [0,update_a, update_t])
+            # 对t进行一轮更新
+
             update_a=tf.while_loop(cond_t, body_t, [0,update_a, update_t])
+            # 对a进行一轮更新
+
             return i+1, update_a, update_t
 
         i,final_a,final_t=tf.while_loop(cond, body, [0,first_a, first_t])
