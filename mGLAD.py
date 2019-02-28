@@ -55,7 +55,7 @@ class mGLAD(Model):
 
     def _loss(self):
         # Weight decay loss
-        for var in self.layers[0].vars.values():
+        for var in self.layers[0].Vars.values():
             self.loss += FLAGS.weight_decay * tf.nn.l2_loss(var)
 
         # Cross entropy error
@@ -199,20 +199,81 @@ class mpnn(Layer):
 
             return i+1, update_a, update_t
 
-        i, final_a, final_t=tf.while_loop(cond, body, [0,first_a, first_t])
-        output=[final_a,final_t]
+        i, final_a, final_t=tf.while_loop(cond, body, [0, first_a, first_t])
+
+        padding_t=tf.constant(0,shape=[self.input_dim[0],self.placeholders["ability_num"]])
+        padding_a=tf.constant(0,shape=[self.input_dim[1],self.placeholders["edge_type"]])
+
+        #此处为了保证输出是一个完整的张量,于是分别对a,t进行padding操作，让它们的维度均为：[-1, worker特征数 + task特征数]
+        output=tf.concat(tf.concat(final_a,padding_a,axis=1), tf.concat(final_t,padding_t,axis=1), axis=0 )
+        # 拼接后即可传出output
+        # 维度为：（ worker node+ task node , worker feature, task feature ）
 
         return output
 
 class Decoder(Layer):
     def __init__(self, input_dim, output_dim, placeholders, **kwargs):
         super(Decoder, self).__init__(**kwargs)
-        self.input_dim=input_dim
-        self.output_dim=output_dim
-        self.placeholders=placeholders
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.placeholders = placeholders
+        self.P = tf.random_normal(shape=[self.input_dim[0], self.input_dim[1], 2], stddev=1, seed=1)
+        
+        with tf.variable_scope('Decoder_vars'):
+            self.Vars["W"]=tf.Variable(initial_value=tf.truncated_normal(shape=[self.placeholders['ability_num'], 1], mean=0, stddev=1), name="W")
+            #在这里的形状是（ability类别*1），即10*1
+             self.Vars["b"]=tf.Variable(initial_value=tf.truncated_normal(shape=1, mean=0, stddev=1), name="b")
+            #在这里的形状是 1
 
     def _call(self, inputs):
-            return
+            worker_feature = inputs[0:self.placeholders["worker_num"]][0:self.placeholders["ability_num"]]
+            task_feature   = inputs[self.placeholders["worker_num"]:][0:self.placeholders["edge_type"]] 
+            
+            #进入循环，此处循环较为复杂，要进行每个worker 对每个task 的每个label的可能性计算
+
+            def cond_worker(i, P):
+                # 针对第i个worker
+
+                return i < self.placeholders["worker_num"]
+            
+            def body_worker(i, P):
+                def cond_task(j, P):
+                    # 针对第j个task
+                    
+                    return j < self.placeholders["task_num"]
+                
+                def body_task(j,P):
+                    
+                    def cond_label(l,P):
+                        # 针对第l个label
+                        return l < self.placeholders["edge_type"]
+                    
+                    def body_label(l,P):
+                        # 对每个l进行计算
+                        tau_prob = task_feature[j][l]
+                        prob_part1 = tf.sigmoid(
+                                            tf.add(
+                                                tf.mul(worker_feature[i],self.Vars["W"]),
+                                                self.Vars["b"])
+                                        )
+                        prob_part2 = tf.divide(
+                                        tf.subtract(tf.constant(1),prob_part1),
+                                        tf.subtract(self.placeholders["edge_type"],tf.constant(1))
+                                        )
+
+                        P[i][j][l]=tf.mul(
+                                        tf.pow(prob_part1,tau_prob),
+                                        tf.pow(
+                                            prob_part2,
+                                            tf.subtract(
+                                                tf.constant(1),
+                                                tau_prob)
+                                            )
+                                        )
+                        return l+1, P
+                    return j+1, P
+                return i+1, P
+
             #进行调用.此处暂定用把它与转置相乘求和的办法
 
 if __name__ == '__main__':
