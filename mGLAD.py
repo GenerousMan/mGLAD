@@ -89,8 +89,8 @@ class mGLAD(Model):
         return tf.nn.softmax(self.outputs)
 
 class mpnn(Layer):
-    #input_dim=(39*104)
-    #output_dim=[(39*D),(104*L)]
+    # input_dim=(39*104)
+    # output_dim=[(39*D),(104*L)]
 
     def __init__(self, input_dim, output_dim, placeholders, update_step, **kwargs):
         super(mpnn, self).__init__(**kwargs)
@@ -137,36 +137,36 @@ class mpnn(Layer):
             return i<self.step
 
         def body(i,update_a,update_t):
-            def cond_a(i,update_a,update_t):
+            def cond_a(j,update_a,update_t):
                 # 判断a的更新进行完毕与否
 
-                return
+                return j < self.input_dim[0]
 
-            def cond_t(i,update_a,update_t):
+            def cond_t(k,update_a,update_t):
                 # 判断t的更新进行完毕与否
 
-                return
+                return k < self.input_dim[1]
 
-            def body_a(i,update_a,update_t):
+            def body_a(j,update_a,update_t):
                 # 用于循环迭代每一轮a的更新
-                def cond_tau(i,update_a,update_t):
+                def cond_tau(jj,update_a,update_t):
+                    #用于判断是否迭代完了每一个worker
 
+                    return jj < self.input_dim[1]
 
-                    return
-
-                def body_tau(i,update_a,update_t):
+                def body_tau(jj,update_a,update_t):
                     # 用于针对每一个worker的ability，都根据原始label选择对应矩阵相乘
-
+                        
                     return
 
                 return
 
-            def body_t(i,update_a,update_t):
+            def body_t(k,update_a,update_t):
                 # 用于循环迭代每一轮t的更新
 
                 return
 
-            #TO DO:这个地方维度计算没有敲定，还有转置等操作要做
+            # TO DO:这个地方维度计算没有敲定，还有转置等操作要做
             update_t=tf.while_loop(cond_a, body_a, [0,update_a, update_t])
             update_a=tf.while_loop(cond_t, body_t, [0,update_a, update_t])
             return i+1, update_a, update_t
