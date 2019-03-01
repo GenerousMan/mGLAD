@@ -1,4 +1,4 @@
-from gcn.inits import *
+#from gcn.inits import *
 import tensorflow as tf
 
 flags = tf.app.flags
@@ -86,14 +86,17 @@ class mpnn(Layer):
     # input_dim=(39*104)
     # output_dim=[(39*D),(104*L)]
 
-    def __init__(self, input_dim, output_dim, placeholders, update_step, **kwargs):
+    def __init__(self, input_dim,edge_type,ability_num, output_dim, placeholders, update_step, **kwargs):
         super(mpnn, self).__init__(**kwargs)
         #self.update_function_a = update_a
         #self.update_function_t = update_t
-
+        self.placeholders=placeholders
         self.adj = placeholders['edges']
         self.step= update_step
         self.input_dim=input_dim
+        self.ability_num=ability_num
+        self.edge_type=edge_type
+        self.Vars={}
         ## 定义基本变量
         ## adj: 邻接矩阵
         ## step: 更新次数
@@ -105,10 +108,10 @@ class mpnn(Layer):
             #TO DO: 确定形状
             #此处形状待定，暂时先按下面的来。
 
-            self.Vars["Awij"]=tf.Variable(initial_value=tf.truncated_normal(shape=[placeholders['edge_type'],placeholders['ability_num'],placeholders['edge_type']], mean=0, stddev=1), name="Awij")
+            self.Vars["Awij"]=tf.Variable(initial_value=tf.truncated_normal(shape=[edge_type, ability_num, edge_type], mean=0, stddev=1), name="Awij")
             #在这里的形状是（ability类别*edge类别），即10*2
 
-            self.Vars["Awij2"]=tf.Variable(initial_value=tf.truncated_normal(shape=[placeholders['edge_type'], 1, placeholders['ability_num']], mean=0, stddev=1), name="Awij2")
+            self.Vars["Awij2"]=tf.Variable(initial_value=tf.truncated_normal(shape=[edge_type, edge_type, ability_num], mean=0, stddev=1), name="Awij2")
             #在这里的形状是（1*每个人的ability类别），此处是1*10
 
         #if self.logging:
@@ -133,7 +136,6 @@ class mpnn(Layer):
         def body(i,update_a,update_t):
             def cond_a(j,update_a,update_t):
                 # 判断a的更新进行完毕与否
-
                 return j < self.input_dim[0]
 
             def cond_t(k,update_a,update_t):
@@ -150,19 +152,29 @@ class mpnn(Layer):
 
                 def body_tau(jj,update_a,update_t):
                     # 用于针对每一个worker的ability，都根据原始label选择对应矩阵相乘
-                    now_t=update_t[jj][inputs[j][jj]] # 根据这条边是啥取用指定tau里的值，维度 1*1
+                    now_t=update_t[jj] # 根据这条边是啥取用指定tau里的值，维度 1*1
                     
-                    A2_label=tf.cond(inputs[j][jj]==0,self.Vars["Awij2"][0],self.Vars["Awij2"][1])
+                    A2_label=self.Vars["Awij2"][inputs[j][jj]]
                     # 根据不同label 选用不同的A2
 
-                    update_a[j]=tf.add(update_a[j],tf.multiply(now_t, A2_label))
+                    update_a=tf.reshape(
+                        tf.concat(
+                            [
+                                update_a[:j-1],
+                                tf.add(update_a[j],
+                                    tf.multiply(now_t, A2_label)),
+                                update_a[j+1:]
+                            ],axis=0),
+                        (39,-1)
+                    )
+                    #update_a_final=tf.concat(update_a_final,update_aj,axis=0)
                     #将update_a的第j个worker的得分进行一个累加计算
 
                     return jj+1, update_a, update_t
 
                 _, update_a, update_t = tf.while_loop(cond_tau, body_tau, [0,update_a, update_t])
 
-                return j+1, update_a, update_t 
+                return j+1, update_a, update_t
 
             def body_t(k,update_a,update_t):
                 
@@ -173,11 +185,19 @@ class mpnn(Layer):
                     return kk < self.input_dim[0]
 
                 def body_aj(kk,update_a,update_t):
-                    A_label=tf.cond(inputs[kk][k]==0,self.Vars["Awij"][0],self.Vars["Awij"][1])
+                    A_label=self.Vars["Awij"][inputs[kk][k]]
                     # 根据不同label取用不同矩阵，存在本次A_label中
 
-                    update_t[k]=tf.add(update_t[k], # 求和的过程，从kk=0到kk=最后一个worker的序号，都给加上
-                        tf.multiply(update_a[kk],A_label))
+                    update_t=tf.reshape(
+                                tf.concat(
+                                [
+                                    update_t[:k-1],
+                                    tf.add(update_t[k], # 求和的过程，从kk=0到kk=最后一个worker的序号，都给加上
+                                        tf.multiply(update_a[kk],A_label)),
+                                    update_t[k+1:]
+                                ],
+                                axis=0),(108,-1))
+
                     # 1*10 x 10*2  = 1*2
                     return kk + 1, update_a, update_t
                 _, update_a, update_t = tf.while_loop(cond_aj, body_aj, [0,update_a, update_t])
@@ -195,28 +215,34 @@ class mpnn(Layer):
 
         i, final_a, final_t=tf.while_loop(cond, body, [0, first_a, first_t])
 
-        padding_t=tf.constant(0,shape=[self.input_dim[0],self.placeholders["ability_num"]])
-        padding_a=tf.constant(0,shape=[self.input_dim[1],self.placeholders["edge_type"]])
-
+        padding_t=tf.constant(0.,shape=[self.input_dim[1],self.ability_num])
+        padding_a=tf.constant(0.,shape=[self.input_dim[0],self.edge_type])
+        print(final_a.shape)
+        print(padding_a.shape)
+        print(final_t.shape)
+        print(padding_t.shape)
         #此处为了保证输出是一个完整的张量,于是分别对a,t进行padding操作，让它们的维度均为：[-1, worker特征数 + task特征数]
-        output=tf.concat(tf.concat(final_a,padding_a,axis=1), tf.concat(final_t,padding_t,axis=1), axis=0 )
+        output=tf.concat([tf.concat([final_a,padding_a],axis=1), tf.concat([final_t,padding_t],axis=1)], axis=0 )
         # 拼接后即可传出output
         # 维度为：（ worker node+ task node , worker feature, task feature ）
 
         return output
 
 class Decoder(Layer):
-    def __init__(self, input_dim, output_dim, placeholders, **kwargs):
+    def __init__(self, input_dim, output_dim,ability_num,edge_type, placeholders, **kwargs):
         super(Decoder, self).__init__(**kwargs)
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.placeholders = placeholders
+        self.ability_num=ability_num
+        self.edge_type=edge_type
         self.P = tf.random_normal(shape=[self.input_dim[0], self.input_dim[1], 2], stddev=1, seed=1)
-        
+        self.Vars={}
+
         with tf.variable_scope('Decoder_vars'):
-            self.Vars["W"]=tf.Variable(initial_value=tf.truncated_normal(shape=[self.placeholders['ability_num'], 1], mean=0, stddev=1), name="W")
+            self.Vars["W"]=tf.Variable(initial_value=tf.truncated_normal(shape=[self.ability_num, 1], mean=0, stddev=1), name="W")
             #在这里的形状是（ability类别*1），即10*1
-             self.Vars["b"]=tf.Variable(initial_value=tf.truncated_normal(shape=1, mean=0, stddev=1), name="b")
+            self.Vars["b"]=tf.Variable(initial_value=tf.truncated_normal(shape=[1], mean=0, stddev=1), name="b")
             #在这里的形状是 1
 
     def _call(self, inputs):
@@ -250,17 +276,18 @@ class Decoder(Layer):
                                                 tf.multiply(worker_feature[i],self.Vars["W"]),
                                                 self.Vars["b"])
                                         )
-                        prob_part2 = tf.divide(
-                                        tf.subtract(tf.constant(1),prob_part1),
-                                        tf.subtract(self.placeholders["edge_type"],tf.constant(1))
-                                        )
+                        print(self.placeholders["edge_type"].dtype)
 
-                        P[i][j][l]=tf.mul(
+                        prob_part2 = tf.divide(
+                                        tf.subtract(tf.constant(1.),prob_part1),
+                                        tf.cast(self.placeholders["edge_type"]-1,tf.float32))
+
+                        P[i][j][l]=tf.multiply(
                                         tf.pow(prob_part1,tau_prob),
                                         tf.pow(
                                             prob_part2,
                                             tf.subtract(
-                                                tf.constant(1),
+                                                tf.cast(tf.constant(1),tf.float32),
                                                 tau_prob)
                                             )
                                         )

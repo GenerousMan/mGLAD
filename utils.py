@@ -4,7 +4,7 @@ import networkx as nx
 import scipy.sparse as sp
 from scipy.sparse.linalg.eigen.arpack import eigsh
 import sys
-
+import yaml
 
 def Cal_ProbLoss(loss,P,edges):
     #predict_edges' shape:(K*x)

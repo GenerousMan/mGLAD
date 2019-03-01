@@ -85,13 +85,14 @@ class mGLAD(Model):
     # inputs: placeholders['edges'] 形状为K
     # outputs: 形状为task节点数*总类数x
 
-    def __init__(self, placeholders, input_dim, **kwargs):
+    def __init__(self, placeholders, input_dim,edge_type,ability_num, **kwargs):
         super(mGLAD, self).__init__(**kwargs)
-
+        self.edge_type=edge_type
+        self.ability_num=ability_num
         self.inputs = placeholders['edges']
         self.input_dim = input_dim
         # self.input_dim = self.inputs.get_shape().as_list()[1]  # To be supported in future Tensorflow versions
-        self.output_dim = placeholders['labels'].get_shape().as_list()[1]
+        self.output_dim = [39,108,2]#placeholders['labels'].get_shape().as_list()[1]
         self.placeholders = placeholders
 
         self.optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
@@ -119,12 +120,18 @@ class mGLAD(Model):
         print("[ model ] Building mGLAD model......")
         print("[ model ] Appending MPNN layer......")
         self.layers.append(mpnn(input_dim = self.input_dim,
-                                output_dim = FLAGS.hidden1,
+                                edge_type = self.edge_type,
+                                ability_num = self.ability_num,
+                                output_dim = [self.placeholders['worker_num']+self.placeholders['task_num'],
+                                              self.placeholders['ability_num']+self.placeholders['edge_type']],
                                 placeholders = self.placeholders,
                                 update_step = 5,
-                                Logging = self.logging))
+                                logging = self.logging))
         print("[ model ] Appending Decoder layer......")
-        self.layers.append(Decoder(input_dim = FLAGS.hidden1,
+        self.layers.append(Decoder(input_dim = [self.placeholders['worker_num']+self.placeholders['task_num'],
+                                              self.placeholders['ability_num']+self.placeholders['edge_type']],
+                                   edge_type=self.edge_type,
+                                   ability_num=self.ability_num,
                                     output_dim = self.output_dim,
                                     placeholders = self.placeholders))
         print("[ model ] Build finished.")

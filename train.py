@@ -3,10 +3,10 @@ from __future__ import print_function
 
 import time
 import tensorflow as tf
-
+import numpy as np
 from utils import *
 from models import mGLAD
-
+import yaml
 # Set random seed
 seed = 123
 np.random.seed(seed)
@@ -32,14 +32,14 @@ model_func = mGLAD
 # Define placeholders
 placeholders = {
     'edges': tf.placeholder(tf.int32,shape=BlueBird_shape),
-    'worker_num': tf.placeholders(tf.int32),
-    'task_num': tf.placeholders(tf.int32),
-    'edge_type':tf.placeholders(tf.int32),
-    'ability_num':tf.placeholders(tf.int32)
+    'worker_num': tf.placeholder(tf.int32),
+    'task_num': tf.placeholder(tf.int32),
+    'edge_type':tf.placeholder(tf.int32),
+    'ability_num':tf.placeholder(tf.int32)
 }
 
 # Create model
-model = model_func(placeholders, input_dim=edges.shape, logging=True)
+model = model_func(placeholders, edge_type=edge_type,ability_num=10,input_dim=edges.shape, logging=True)
 
 # Initialize session
 sess = tf.Session()
