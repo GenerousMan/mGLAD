@@ -5,6 +5,7 @@ import time
 import tensorflow as tf
 import numpy as np
 from utils import *
+from utils import Cal_ProbLoss
 from models import mGLAD
 import yaml
 # Set random seed
@@ -39,7 +40,7 @@ placeholders = {
 }
 
 # Create model
-model = model_func(placeholders, edge_type=edge_type,ability_num=10,input_dim=edges.shape, logging=True)
+model = model_func(placeholders, edge_type=edge_type,task_num=task_num,worker_num=worker_num,ability_num=10,input_dim=edges.shape, logging=True)
 
 # Initialize session
 sess = tf.Session()
@@ -67,20 +68,20 @@ for epoch in range(FLAGS.epochs):
     #feed_dict.update({placeholders['dropout']: FLAGS.dropout})
 
     # Training step
-    outs = sess.run([model.opt_op, model.loss, model.accuracy], feed_dict=feed_dict)
+    outs = sess.run([model.opt_op, model.loss, model.accuracy,model.outputs], feed_dict=feed_dict)
 
     # Validation
-    cost, acc, duration = evaluate(worker_num,task_num,edge_type,ability_num,placeholders)
+    cost, acc, duration = evaluate(edges,worker_num,task_num,edge_type,10,placeholders)
     cost_val.append(cost)
-
+    print(outs[3])
     # Print results
     print("Epoch:", '%04d' % (epoch + 1), "train_loss=", "{:.5f}".format(outs[1]),
           "train_acc=", "{:.5f}".format(outs[2]), "val_loss=", "{:.5f}".format(cost),
           "val_acc=", "{:.5f}".format(acc), "time=", "{:.5f}".format(time.time() - t))
 
-    if epoch > FLAGS.early_stopping and cost_val[-1] > np.mean(cost_val[-(FLAGS.early_stopping+1):-1]):
-        print("Early stopping...")
-        break
+    # if epoch > FLAGS.early_stopping and cost_val[-1] > np.mean(cost_val[-(FLAGS.early_stopping+1):-1]):
+    #     print("Early stopping...")
+    #     break
 
 print("Optimization Finished!")
 '''

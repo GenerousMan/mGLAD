@@ -2,26 +2,31 @@ import numpy as np
 import pickle as pkl
 import networkx as nx
 import scipy.sparse as sp
+import tensorflow as tf
+
 from scipy.sparse.linalg.eigen.arpack import eigsh
 import sys
 import yaml
 
-def Cal_ProbLoss(loss,P,edges):
-    #predict_edges' shape:(K*x)
+
+def Cal_ProbLoss(loss, P, edges):
+    # predict_edges' shape:(K*x)
     
     def cond_worker(i,loss_now):
         #判断第i个worker
 
         return i < edges.shape[0]
     def body_worker(i,loss_now):
-        #对loss进行累加运算
+        # 对loss进行累加运算
         def cond_task(j,loss_now):
-            #判断第j个task
+            # 判断第j个task
 
             return j<edges.shape[1]
+
         def body_task(j,loss_now):
-            #对loss进行累加运算
-            loss=tf.add(loss,P[i][j][edges[i][j]])
+
+            # 对loss进行累加运算
+            loss = tf.add(loss,P[i][j][edges[i][j]])
 
             return j+1, loss 
         loss=tf.while_loop(cond_task,body_task,[0,loss])
