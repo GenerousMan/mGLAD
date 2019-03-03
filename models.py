@@ -122,7 +122,7 @@ class mGLAD(Model):
             return loss
         # Weight decay loss
         for var in self.layers[0].Vars.values():
-            self.loss += FLAGS.weight_decay * tf.nn.l2_loss(var)
+            self.loss += 0*FLAGS.weight_decay * tf.nn.l2_loss(var)
 
         # Cross entropy error
 
@@ -130,14 +130,14 @@ class mGLAD(Model):
         #但是原文意思是要计算概率，也就是每条边和原本相同的值的概率
         #TO DO：确定outputs的输出形状，如果原始边连接矩阵的形状是K，总共有x个label，那就应该是K*x，然后softmax找原始Label概率
 
-        self.loss += Cal_ProbLoss(self.loss, self.outputs, self.placeholders['edges'])
+        self.loss += -1*Cal_ProbLoss(self.loss, self.outputs, self.placeholders['edges'])
 
     def _accuracy(self):
         print(tf.argmax(self.outputs, 2).dtype)
         print(self.placeholders['edges'].dtype)
         self.accuracy =  tf.reduce_mean(tf.cast(
             tf.equal(tf.cast(tf.argmax(self.outputs, 2),float), tf.cast(self.placeholders['edges'],float)),
-            tf.float32)
+            tf.float32),name='accuracy'
         )
 
     def _build(self):
@@ -166,4 +166,4 @@ class mGLAD(Model):
         print("[ model ] Build finished.")
 
     def predict(self):
-        return tf.argmax(self.outputs,axis=2)
+        return tf.argmax(self.outputs,axis=2,name='predict')

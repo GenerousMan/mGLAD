@@ -110,10 +110,10 @@ class mpnn(Layer):
             #TO DO: 确定形状
             #此处形状待定，暂时先按下面的来。
 
-            self.Vars["Awij"]=tf.Variable(initial_value=tf.truncated_normal(shape=[edge_type, ability_num, edge_type], mean=0, stddev=1), name="Awij")
+            self.Vars["Awij"]=tf.Variable(initial_value=tf.truncated_normal(shape=[edge_type, ability_num, edge_type], mean=0, stddev=0.01), name="Awij")
             #在这里的形状是（ability类别*edge类别），即10*2
 
-            self.Vars["Awij2"]=tf.Variable(initial_value=tf.truncated_normal(shape=[edge_type, edge_type, ability_num], mean=0, stddev=1), name="Awij2")
+            self.Vars["Awij2"]=tf.Variable(initial_value=tf.truncated_normal(shape=[edge_type, edge_type, ability_num], mean=0, stddev=0.01), name="Awij2")
             #在这里的形状是（1*每个人的ability类别），此处是1*10
 
         #if self.logging:
@@ -129,8 +129,8 @@ class mpnn(Layer):
         # **更新a：是否要把不同label的累加矩阵算上
         # **更新t：确定只加正确类的label的权重
 
-        first_a = tf.random_normal(shape=[self.input_dim[0], self.placeholders['ability_num']], stddev=1, seed=1)
-        first_t = tf.random_normal(shape=[self.input_dim[1], self.placeholders['edge_type']], stddev=1, seed=1)
+        first_a = tf.random_normal(shape=[self.input_dim[0], self.placeholders['ability_num']], stddev=1, seed=1,name='first_a')
+        first_t = tf.random_normal(shape=[self.input_dim[1], self.placeholders['edge_type']], stddev=1, seed=1,name='first_t')
 
         def cond(i,update_a, update_t):
             return i<self.step
@@ -154,7 +154,7 @@ class mpnn(Layer):
 
                 def body_tau(jj,update_a,update_t):
                     # 用于针对每一个worker的ability，都根据原始label选择对应矩阵相乘
-                    now_t=update_t[jj] # 根据这条边是啥取用指定tau里的值，维度 1*1
+                    now_t=update_t[jj] # 根据这条边是啥取用指定tau里的值，维度 1*2
                     
                     A2_label=self.Vars["Awij2"][inputs[j][jj]]
                     # 根据不同label 选用不同的A2
@@ -164,9 +164,9 @@ class mpnn(Layer):
                             [
                                 update_a[:j],
                                 tf.add(update_a[j],
-                                    tf.matmul(tf.reshape(now_t,[1,self.edge_type]), A2_label)),
+                                    tf.matmul(tf.reshape(now_t,[1,self.edge_type]), A2_label),name='each_tau_x_its_A2'),
                                 update_a[j+1:]
-                            ],axis=0),
+                            ],axis=0,name='now_update_a'),
                         (39,-1)
                     )
                     #update_a_final=tf.concat(update_a_final,update_aj,axis=0)
@@ -174,7 +174,7 @@ class mpnn(Layer):
 
                     return jj+1, update_a, update_t
 
-                _, update_a, update_t = tf.while_loop(cond_tau, body_tau, [0,update_a, update_t])
+                _, update_a, update_t = tf.while_loop(cond_tau, body_tau, [0,update_a, update_t],name='MPNN_each_t_for_a')
 
                 return j+1, update_a, update_t
 
@@ -190,36 +190,37 @@ class mpnn(Layer):
                     A_label=self.Vars["Awij"][inputs[kk][k]]
                     # 根据不同label取用不同矩阵，存在本次A_label中
 
-                    update_t=tf.reshape(
+                    update_t=tf.nn.softmax(
+				tf.reshape(
                                 tf.concat(
                                 [
                                     update_t[:k],
                                     tf.add(update_t[k], # 求和的过程，从kk=0到kk=最后一个worker的序号，都给加上
                                         tf.matmul(tf.reshape(update_a[kk],shape=[-1,self.ability_num]),
-                                                  A_label)),
+                                                  A_label),name='each_a_x_its_A'),
                                     update_t[k+1:]
                                 ],
-                                axis=0),(108,-1))
+                                axis=0),(108,-1),name='now_update_t'))
 
                     # 1*10 x 10*2  = 1*2
                     return kk + 1, update_a, update_t
-                _, update_a, update_t = tf.while_loop(cond_aj, body_aj, [0,update_a, update_t])
+                _, update_a, update_t = tf.while_loop(cond_aj, body_aj, [0,update_a, update_t],name='MPNN_each_a_for_t')
 
                 return k + 1, update_a, update_t
 
             # TO DO:这个地方维度计算没有敲定，还有转置等操作要做
-            _, update_a, update_t = tf.while_loop(cond_a, body_a, [0,update_a, update_t])
+            _, update_a, update_t = tf.while_loop(cond_a, body_a, [0,update_a, update_t],name='MPNN_a_update')
             # 对t进行一轮更新
 
-            _, update_a, update_t = tf.while_loop(cond_t, body_t, [0,update_a, update_t])
+            _, update_a, update_t = tf.while_loop(cond_t, body_t, [0,update_a, update_t],name='MPNN_t_update')
             # 对a进行一轮更新
 
             return i+1, update_a, update_t
 
-        i, final_a, final_t=tf.while_loop(cond, body, [0, first_a, first_t])
+        i, final_a, final_t=tf.while_loop(cond, body, [0, first_a, first_t],name='MPNN_main')
 
-        padding_t=tf.constant(0.,shape=[self.task_num,self.ability_num])
-        padding_a=tf.constant(0.,shape=[self.worker_num,self.edge_type])
+        padding_t=tf.random_normal(shape=[self.task_num,self.ability_num])
+        padding_a=tf.random_normal(shape=[self.worker_num,self.edge_type])
         #此处为了保证输出是一个完整的张量,于是分别对a,t进行padding操作，让它们的维度均为：[-1, worker特征数 + task特征数]
         output=tf.concat([tf.concat([final_a,padding_a],axis=1), tf.concat([final_t,padding_t],axis=1)], axis=0 )
         # 拼接后即可传出output
@@ -242,16 +243,16 @@ class Decoder(Layer):
 
 
         with tf.variable_scope('Decoder_vars'):
-            self.Vars["W"]=tf.Variable(initial_value=tf.truncated_normal(shape=[self.ability_num, 1], mean=0, stddev=1), name="W")
+            self.Vars["W"]=tf.Variable(initial_value=tf.truncated_normal(shape=[self.ability_num, 1], mean=0, stddev=0.01), name="W")
             # 在这里的形状是（ability类别*1），即10*1
-            self.Vars["b"]=tf.Variable(initial_value=tf.truncated_normal(shape=[1], mean=0, stddev=1), name="b")
+            self.Vars["b"]=tf.Variable(initial_value=tf.truncated_normal(shape=[1], mean=0, stddev=0.01), name="b")
             # 在这里的形状是 1
 
     def _call(self, inputs):
             #print(self.ability_num)
             #print(self.input_dim)
             worker_feature = inputs[:self.worker_num,:self.ability_num]
-            task_feature = inputs[self.worker_num+1:,:self.edge_type]
+            task_feature = inputs[self.worker_num:,:self.edge_type]
             #print(worker_feature.shape)
             print("inputs' shape:",inputs.shape)
             print("workers' features' shape:",worker_feature.shape)
@@ -285,11 +286,12 @@ class Decoder(Layer):
                                                     tf.reshape(
                                                         worker_feature[i,:10],shape=[1,self.ability_num]),
                                                     self.Vars["W"]),
-                                                self.Vars["b"])
+                                                self.Vars["b"]),
+                                        name='prob_part_1'
                                         )
                         prob_part2 = tf.divide(
                                         tf.subtract(tf.constant(1.),prob_part1),
-                                        tf.cast(self.placeholders["edge_type"]-1,tf.float32))
+                                        tf.cast(self.placeholders["edge_type"]-1,tf.float32),name='prob_part_2')
                         P_l_single=tf.reshape(tf.matmul(
                                         tf.pow(prob_part1,tau_prob),
                                         tf.pow(
@@ -298,7 +300,7 @@ class Decoder(Layer):
                                                 tf.cast(tf.constant(1),tf.float32),
                                                 tau_prob)
                                             )
-                                        ),shape=[1])
+                                        ),shape=[1],name='P_1_single')
 
                         # 先计算出当前位置的P，是第i个worker给第j个label打第l个label的可能性
                         # 下面进行一个个赋值
@@ -312,7 +314,7 @@ class Decoder(Layer):
                                     ],
                                     axis=0),
                             shape=[-1,self.edge_type]
-                                )
+                                ,name='P_for_each_l')
 
                         # 接着对task维度进行赋值，合并，成为一个二维的向量，
                         # 代表这个worker对所有task的所有label打分的可能性
@@ -325,7 +327,8 @@ class Decoder(Layer):
                                 ],
                                     axis=0),
                             shape=[-1,self.task_num,self.edge_type]
-                            )
+
+                            ,name='P_for_each_worker')
 
                         # 及接着对worker维度进行赋值，合并，成为一个三维向量，
                         # 代表所有worker对所有task的所有label打分的可能性
@@ -338,17 +341,18 @@ class Decoder(Layer):
                             ],
                                 axis=0),
                             shape=[self.worker_num, self.task_num, self.edge_type]
-                        )
+                        ,name='P_for_all')
                         return l+1, P
 
-                    _, P = tf.while_loop(cond_label,body_label,[0,P])
+                    _, P = tf.while_loop(cond_label,body_label,[0,P],name='P_for_each_label')
+                    print('[info ] P\'s shape is:', P.shape)
 
                     return j+1, P
 
-                _,P = tf.while_loop(cond_task,body_task,[0,P])
+                _,P = tf.while_loop(cond_task,body_task,[0,P],name='P_for_each_task')
 
                 return i+1, P
-            _, P= tf.while_loop(cond_worker,body_worker,[0,self.P])
-
+            _, P= tf.while_loop(cond_worker,body_worker,[0,self.P],name='P_for_all_workers')
+            #print('[info ] P\'s shape is:', P.shape)
             return P
             #进行调用

@@ -3,6 +3,7 @@ from __future__ import print_function
 
 import time
 import tensorflow as tf
+from tensorflow.python import debug as tfdbg
 import numpy as np
 from utils import *
 from utils import Cal_ProbLoss
@@ -44,6 +45,9 @@ model = model_func(placeholders, edge_type=edge_type,task_num=task_num,worker_nu
 
 # Initialize session
 sess = tf.Session()
+
+#sess = tfdbg.LocalCLIDebugWrapperSession(sess)
+#sess.add_tensor_filter("has_inf_or_nan", tfdbg.has_inf_or_nan)
 writer = tf.summary.FileWriter("logs/", sess.graph)
 
 # Define model evaluation function
@@ -68,7 +72,7 @@ for epoch in range(FLAGS.epochs):
     #feed_dict.update({placeholders['dropout']: FLAGS.dropout})
 
     # Training step
-    outs = sess.run([model.opt_op, model.loss, model.accuracy,model.outputs], feed_dict=feed_dict)
+    outs = sess.run([model.opt_op, model.loss, model.accuracy,model.outputs,model.vars], feed_dict=feed_dict)
 
     # Validation
     cost, acc, duration = evaluate(edges,worker_num,task_num,edge_type,10,placeholders)
