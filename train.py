@@ -44,7 +44,7 @@ model = model_func(placeholders, edge_type=edge_type,task_num=task_num,worker_nu
 
 # Initialize session
 sess = tf.Session()
-
+writer = tf.summary.FileWriter("logs/", sess.graph)
 
 # Define model evaluation function
 def evaluate(edges,worker_num,task_num,edge_type,ability_num,placeholders):

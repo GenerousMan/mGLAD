@@ -43,11 +43,11 @@ def read_BlueBirds():
 
     print("[ data ] Now loading blueBirds dataset......")
     numTrial=40
-    f=open("C://Users//Administrator//Desktop//demo//bluebirds//gt.yaml")
+    f=open("./bluebirds/gt.yaml")
     gtLabels = yaml.load(f)
     imgIds = gtLabels.keys(); numImg = len(gtLabels)
     imgId2Idx = dict((idx, id) for (idx, id) in enumerate(imgIds))
-    data = yaml.load(open("C://Users//Administrator//Desktop//demo//bluebirds//labels.yaml"))
+    data = yaml.load(open("./bluebirds/labels.yaml"))
     dinfo = { 'numImg' : numImg, 'numTrial' : numTrial }
     dinfo['gt'] = [gtLabels[id] for id in imgIds]
 
