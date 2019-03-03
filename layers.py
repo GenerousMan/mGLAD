@@ -269,7 +269,7 @@ class Decoder(Layer):
                 def cond_task(j, P):
                     # 针对第j个task
                     
-                    return j < self.task_num-1
+                    return j < self.task_num
                 
                 def body_task(j,P):
                     
