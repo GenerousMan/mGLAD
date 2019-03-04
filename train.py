@@ -72,12 +72,12 @@ for epoch in range(FLAGS.epochs):
     #feed_dict.update({placeholders['dropout']: FLAGS.dropout})
 
     # Training step
-    outs = sess.run([model.opt_op, model.loss, model.accuracy,model.outputs,model.vars], feed_dict=feed_dict)
+    outs = sess.run([model.opt_op, model.loss, model.accuracy,model.outputs,model.layers[0].output], feed_dict=feed_dict)
 
     # Validation
     cost, acc, duration = evaluate(edges,worker_num,task_num,edge_type,10,placeholders)
     cost_val.append(cost)
-    print(outs[3])
+    print(outs[4])
     # Print results
     print("Epoch:", '%04d' % (epoch + 1), "train_loss=", "{:.5f}".format(outs[1]),
           "train_acc=", "{:.5f}".format(outs[2]), "val_loss=", "{:.5f}".format(cost),

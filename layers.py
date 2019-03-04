@@ -129,8 +129,8 @@ class mpnn(Layer):
         # **更新a：是否要把不同label的累加矩阵算上
         # **更新t：确定只加正确类的label的权重
 
-        first_a = tf.random_normal(shape=[self.input_dim[0], self.placeholders['ability_num']], stddev=1, seed=1,name='first_a')
-        first_t = tf.random_normal(shape=[self.input_dim[1], self.placeholders['edge_type']], stddev=1, seed=1,name='first_t')
+        first_a = tf.random_normal(shape=[self.worker_num, self.placeholders['ability_num']], stddev=1, seed=1,name='first_a')
+        first_t = tf.random_normal(shape=[self.task_num, self.placeholders['edge_type']], stddev=1, seed=1,name='first_t')
 
         def cond(i,update_a, update_t):
             return i<self.step
@@ -138,19 +138,19 @@ class mpnn(Layer):
         def body(i,update_a,update_t):
             def cond_a(j,update_a,update_t):
                 # 判断a的更新进行完毕与否
-                return j < self.input_dim[0]
+                return j < self.worker_num
 
             def cond_t(k,update_a,update_t):
                 # 判断t的更新进行完毕与否
 
-                return k < self.input_dim[1]
+                return k < self.task_num
 
             def body_a(j,update_a,update_t):
                 # 用于循环迭代每一轮a的更新
                 def cond_tau(jj,update_a,update_t):
                     #用于判断是否迭代完了每一个worker
 
-                    return jj < self.input_dim[1]
+                    return jj < self.task_num
 
                 def body_tau(jj,update_a,update_t):
                     # 用于针对每一个worker的ability，都根据原始label选择对应矩阵相乘
@@ -184,7 +184,7 @@ class mpnn(Layer):
 
                 def cond_aj(kk,update_a,update_t):
                     # 用于判断是否考虑到了每一个worker
-                    return kk < self.input_dim[0]
+                    return kk < self.worker_num
 
                 def body_aj(kk,update_a,update_t):
                     A_label=self.Vars["Awij"][inputs[kk][k]]
@@ -222,11 +222,11 @@ class mpnn(Layer):
         padding_t=tf.random_normal(shape=[self.task_num,self.ability_num])
         padding_a=tf.random_normal(shape=[self.worker_num,self.edge_type])
         #此处为了保证输出是一个完整的张量,于是分别对a,t进行padding操作，让它们的维度均为：[-1, worker特征数 + task特征数]
-        output=tf.concat([tf.concat([final_a,padding_a],axis=1), tf.concat([final_t,padding_t],axis=1)], axis=0 )
+        self.output=tf.concat([tf.concat([final_a,padding_a],axis=1), tf.concat([final_t,padding_t],axis=1)], axis=0 )
         # 拼接后即可传出output
         # 维度为：（ worker node+ task node , worker feature, task feature ）
 
-        return output
+        return self.output
 
 class Decoder(Layer):
     def __init__(self, input_dim,task_num, worker_num,output_dim,ability_num,edge_type, placeholders, **kwargs):
@@ -318,6 +318,7 @@ class Decoder(Layer):
 
                         # 接着对task维度进行赋值，合并，成为一个二维的向量，
                         # 代表这个worker对所有task的所有label打分的可能性
+                        print(P_l.shape)
 
                         P_j = tf.reshape(
                                     tf.concat([
@@ -332,6 +333,7 @@ class Decoder(Layer):
 
                         # 及接着对worker维度进行赋值，合并，成为一个三维向量，
                         # 代表所有worker对所有task的所有label打分的可能性
+                        print(P_j.shape)
 
                         P = tf.reshape(
                             tf.concat([
