@@ -103,6 +103,7 @@ class mGLAD(Model):
         self.build()
 
     def _loss(self):
+
         def Cal_ProbLoss(loss, P, edges):
             # predict_edges' shape:(K*x)
             def cond_worker(i, loss_now):
@@ -122,26 +123,31 @@ class mGLAD(Model):
             _,loss = tf.while_loop(cond_worker, body_worker, [0, loss])
             return loss
         # Weight decay loss
-        for var in self.layers[0].Vars.values():
-            self.loss += FLAGS.weight_decay * tf.nn.l2_loss(var)
+        with tf.name_scope('loss'):
+            for var in self.layers[0].Vars.values():
+                self.loss += FLAGS.weight_decay * tf.nn.l2_loss(var)
 
-        # Cross entropy error
+            # Cross entropy error
 
-        #此处计算输出边的连接关系和原本边的关系的交叉熵
-        #但是原文意思是要计算概率，也就是每条边和原本相同的值的概率
-        #TO DO：确定outputs的输出形状，如果原始边连接矩阵的形状是K，总共有x个label，那就应该是K*x，然后softmax找原始Label概率
+            #此处计算输出边的连接关系和原本边的关系的交叉熵
+            #但是原文意思是要计算概率，也就是每条边和原本相同的值的概率
+            #TO DO：确定outputs的输出形状，如果原始边连接矩阵的形状是K，总共有x个label，那就应该是K*x，然后softmax找原始Label概率
 
-        self.loss += Cal_ProbLoss(self.loss, self.outputs, self.placeholders['edges'])
-        #tf.scalar_summary('loss', self.loss)
-        tf.summary.scalar('loss', self.loss)
+            self.loss += Cal_ProbLoss(self.loss, self.outputs, self.placeholders['edges'])
+            #tf.scalar_summary('loss', self.loss)
+
+            tf.summary.scalar('loss', self.loss)
 
     def _accuracy(self):
         print(tf.argmax(self.outputs, 2).dtype)
         print(self.placeholders['edges'].dtype)
-        self.accuracy =  tf.reduce_mean(tf.cast(
-            tf.equal(tf.cast(tf.argmax(self.outputs, 2),float), tf.cast(self.placeholders['edges'],float)),
-            tf.float32),name='accuracy'
-        )
+        with tf.name_scope('accuracy'):
+            self.accuracy =  tf.reduce_mean(tf.cast(
+                tf.equal(tf.cast(tf.argmax(self.outputs, 2),float), tf.cast(self.placeholders['edges'],float)),
+                tf.float32),name='accuracy'
+            )
+            tf.summary.scalar('accuracy', self.accuracy)
+
 
     def _build(self):
 
