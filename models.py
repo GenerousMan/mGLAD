@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from layers import *
 #from metrics import *
 
@@ -114,7 +115,7 @@ class mGLAD(Model):
                     return j < edges.shape[1]
                 def body_task(j, loss_now):
                     # 对loss进行累加运算
-                    loss_now = tf.add(loss_now, P[i][j][edges[i][j]])
+                    loss_now = tf.add(loss_now,1- P[i][j][edges[i][j]])
                     return j + 1, loss_now
                 _,loss_now = tf.while_loop(cond_task, body_task, [0, loss_now])
                 return i + 1, loss_now
@@ -122,7 +123,7 @@ class mGLAD(Model):
             return loss
         # Weight decay loss
         for var in self.layers[0].Vars.values():
-            self.loss += 0*FLAGS.weight_decay * tf.nn.l2_loss(var)
+            self.loss += FLAGS.weight_decay * tf.nn.l2_loss(var)
 
         # Cross entropy error
 
@@ -130,7 +131,9 @@ class mGLAD(Model):
         #但是原文意思是要计算概率，也就是每条边和原本相同的值的概率
         #TO DO：确定outputs的输出形状，如果原始边连接矩阵的形状是K，总共有x个label，那就应该是K*x，然后softmax找原始Label概率
 
-        self.loss += -1*Cal_ProbLoss(self.loss, self.outputs, self.placeholders['edges'])
+        self.loss += Cal_ProbLoss(self.loss, self.outputs, self.placeholders['edges'])
+        #tf.scalar_summary('loss', self.loss)
+        tf.summary.scalar('loss', self.loss)
 
     def _accuracy(self):
         print(tf.argmax(self.outputs, 2).dtype)
@@ -152,7 +155,7 @@ class mGLAD(Model):
                                 output_dim = [self.placeholders['worker_num']+self.placeholders['task_num'],
                                               self.placeholders['ability_num']+self.placeholders['edge_type']],
                                 placeholders = self.placeholders,
-                                update_step = 5,
+                                update_step = 3,
                                 logging = self.logging))
         print("[ model ] Appending Decoder layer......")
         self.layers.append(Decoder(input_dim = [self.placeholders['worker_num']+self.placeholders['task_num'],

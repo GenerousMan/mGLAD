@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #from gcn.inits import *
 import tensorflow as tf
 
@@ -190,8 +191,7 @@ class mpnn(Layer):
                     A_label=self.Vars["Awij"][inputs[kk][k]]
                     # 根据不同label取用不同矩阵，存在本次A_label中
 
-                    update_t=tf.nn.softmax(
-				tf.reshape(
+                    update_t=tf.reshape(
                                 tf.concat(
                                 [
                                     update_t[:k],
@@ -200,24 +200,29 @@ class mpnn(Layer):
                                                   A_label),name='each_a_x_its_A'),
                                     update_t[k+1:]
                                 ],
-                                axis=0),(108,-1),name='now_update_t'))
+                                axis=0),(108,-1),name='now_update_t')
 
                     # 1*10 x 10*2  = 1*2
                     return kk + 1, update_a, update_t
                 _, update_a, update_t = tf.while_loop(cond_aj, body_aj, [0,update_a, update_t],name='MPNN_each_a_for_t')
+                #tf.Print(update_a,["a:",update_a])
 
                 return k + 1, update_a, update_t
 
             # TO DO:这个地方维度计算没有敲定，还有转置等操作要做
             _, update_a, update_t = tf.while_loop(cond_a, body_a, [0,update_a, update_t],name='MPNN_a_update')
-            # 对t进行一轮更新
-
-            _, update_a, update_t = tf.while_loop(cond_t, body_t, [0,update_a, update_t],name='MPNN_t_update')
             # 对a进行一轮更新
 
-            return i+1, update_a, update_t
+
+            _, update_a, update_t = tf.while_loop(cond_t, body_t, [0,update_a, update_t],name='MPNN_t_update')
+            # 对t进行一轮更新
+            #update_t = tf.nn.softmax(update_t)
+
+            return i+1, update_a, tf.nn.softmax(update_t)
 
         i, final_a, final_t=tf.while_loop(cond, body, [0, first_a, first_t],name='MPNN_main')
+        self.a=final_a
+        self.t=final_t#tf.nn.softmax(final_t)
 
         padding_t=tf.random_normal(shape=[self.task_num,self.ability_num])
         padding_a=tf.random_normal(shape=[self.worker_num,self.edge_type])
@@ -284,7 +289,7 @@ class Decoder(Layer):
                                             tf.add(
                                                 tf.matmul(
                                                     tf.reshape(
-                                                        worker_feature[i,:10],shape=[1,self.ability_num]),
+                                                        worker_feature[i,:self.ability_num],shape=[1,self.ability_num]),
                                                     self.Vars["W"]),
                                                 self.Vars["b"]),
                                         name='prob_part_1'
