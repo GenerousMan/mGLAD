@@ -21,18 +21,18 @@ flags = tf.app.flags
 FLAGS = flags.FLAGS
 #flags.DEFINE_string('dataset', 'cora', 'Dataset string.')  # 'cora', 'citeseer', 'pubmed'
 flags.DEFINE_string('model', 'mGLAD', 'Model string.')  # 'gcn', 'gcn_cheby', 'dense'
-flags.DEFINE_float('learning_rate', 0.001, 'Initial learning rate.')
+flags.DEFINE_float('learning_rate', 0.00001, 'Initial learning rate.')
 flags.DEFINE_integer('epochs', 200, 'Number of epochs to train.')
 #flags.DEFINE_integer('hidden1', 16, 'Number of units in hidden layer 1.')
 #flags.DEFINE_float('dropout', 0.5, 'Dropout rate (1 - keep probability).')
 flags.DEFINE_float('weight_decay', 5e-4, 'Weight for L2 loss on embedding matrix.')
-flags.DEFINE_integer('ability_num', 100, 'Weight for L2 loss on embedding matrix.')
+flags.DEFINE_integer('ability_num', 500, 'Weight for L2 loss on embedding matrix.')
 #flags.DEFINE_integer('early_stopping', 10, 'Tolerance for early stopping (# of epochs).')
 #flags.DEFINE_integer('max_degree', 3, 'Maximum Chebyshev polynomial degree.')
 
 # Load data
-BlueBird_shape,worker_num,task_num,edge_type,edges = read_BlueBirds()
-
+BlueBird_shape,worker_num,task_num,edge_type,edges,true_labels = read_BlueBirds()
+print(true_labels)
 model_func = mGLAD
 # Define placeholders
 placeholders = {
@@ -80,8 +80,10 @@ for epoch in range(FLAGS.epochs):
     # Validation
     cost, acc, duration = evaluate(edges,worker_num,task_num,edge_type,FLAGS.ability_num,placeholders)
     cost_val.append(cost)
-    print(outs[4])
-    print(outs[5])
+    latent_t_predict=np.argmin(outs[4], axis=1)
+    print((np.equal(true_labels,latent_t_predict)).sum()/task_num)
+    #print(np.argmax(outs[4],axis=1))
+    #print(outs[4])
     # Print results
     print("Epoch:", '%04d' % (epoch + 1), "train_loss=", "{:.5f}".format(outs[1]),
           "train_acc=", "{:.5f}".format(outs[2]), "val_loss=", "{:.5f}".format(cost),

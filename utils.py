@@ -48,6 +48,7 @@ def read_BlueBirds():
     gtLabels = yaml.load(f)
     imgIds = gtLabels.keys(); numImg = len(gtLabels)
     imgId2Idx = dict((idx, id) for (idx, id) in enumerate(imgIds))
+    print(imgId2Idx)
     data = yaml.load(open("./bluebirds/labels.yaml"))
     dinfo = { 'numImg' : numImg, 'numTrial' : numTrial }
     dinfo['gt'] = [gtLabels[id] for id in imgIds]
@@ -62,7 +63,12 @@ def read_BlueBirds():
             #print(data[wkrId2Idx[i]][imgId2Idx[j]])
             Graph[i][j]=int(data[wkrId2Idx[i]][imgId2Idx[j]])
     print("[ data ] Build Graph Finished. ")
-    return Graph.shape,len(wkrIds),len(imgIds),2,Graph
+    print("[ data ] Now get the true labels...")
+    TrueLabels=np.zeros(len(imgIds))
+    for i in range(len(imgIds)):
+        TrueLabels[i]=gtLabels[imgId2Idx[i]]
+
+    return Graph.shape,len(wkrIds),len(imgIds),2,Graph,TrueLabels
 def construct_feed_dict(edges,worker_num,task_num,edge_type,ability_num,placeholders):
     """Construct feed dictionary."""
     feed_dict = dict()

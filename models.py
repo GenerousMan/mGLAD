@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from layers import *
-#from metrics import *
+
+# from metrics import *
 
 flags = tf.app.flags
 FLAGS = flags.FLAGS
@@ -82,20 +83,21 @@ class Model(object):
         saver.restore(sess, save_path)
         print("Model restored from file: %s" % save_path)
 
+
 class mGLAD(Model):
     # inputs: placeholders['edges'] 形状为K
     # outputs: 形状为task节点数*总类数x
 
-    def __init__(self, placeholders,worker_num,task_num, input_dim,edge_type,ability_num, **kwargs):
+    def __init__(self, placeholders, worker_num, task_num, input_dim, edge_type, ability_num, **kwargs):
         super(mGLAD, self).__init__(**kwargs)
-        self.edge_type=edge_type
-        self.ability_num=ability_num
+        self.edge_type = edge_type
+        self.ability_num = ability_num
         self.inputs = placeholders['edges']
         self.input_dim = input_dim
-        self.worker_num=worker_num
-        self.task_num=task_num
+        self.worker_num = worker_num
+        self.task_num = task_num
         # self.input_dim = self.inputs.get_shape().as_list()[1]  # To be supported in future Tensorflow versions
-        self.output_dim = [worker_num,task_num,edge_type]#placeholders['labels'].get_shape().as_list()[1]
+        self.output_dim = [worker_num, task_num, edge_type]  # placeholders['labels'].get_shape().as_list()[1]
         self.placeholders = placeholders
 
         self.optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)
@@ -103,25 +105,30 @@ class mGLAD(Model):
         self.build()
 
     def _loss(self):
-
         def Cal_ProbLoss(loss, P, edges):
             # predict_edges' shape:(K*x)
             def cond_worker(i, loss_now):
                 # 判断第i个worker
                 return i < edges.shape[0]
+
             def body_worker(i, loss_now):
                 # 对loss进行累加运算
                 def cond_task(j, loss_now):
                     # 判断第j个task
                     return j < edges.shape[1]
+
                 def body_task(j, loss_now):
                     # 对loss进行累加运算
-                    loss_now = tf.add(loss_now,1- P[i][j][edges[i][j]])
+                    loss_now = tf.add(loss_now, 1 - P[i][j][edges[i][j]])
+                    # loss_now = tf.add(loss_now, tf.log(1- P[i][j][edges[i][j]]))
                     return j + 1, loss_now
-                _,loss_now = tf.while_loop(cond_task, body_task, [0, loss_now])
+
+                _, loss_now = tf.while_loop(cond_task, body_task, [0, loss_now])
                 return i + 1, loss_now
-            _,loss = tf.while_loop(cond_worker, body_worker, [0, loss])
+
+            _, loss = tf.while_loop(cond_worker, body_worker, [0, loss])
             return loss
+
         # Weight decay loss
         with tf.name_scope('loss'):
             for var in self.layers[0].Vars.values():
@@ -129,12 +136,12 @@ class mGLAD(Model):
 
             # Cross entropy error
 
-            #此处计算输出边的连接关系和原本边的关系的交叉熵
-            #但是原文意思是要计算概率，也就是每条边和原本相同的值的概率
-            #TO DO：确定outputs的输出形状，如果原始边连接矩阵的形状是K，总共有x个label，那就应该是K*x，然后softmax找原始Label概率
+            # 此处计算输出边的连接关系和原本边的关系的交叉熵
+            # 但是原文意思是要计算概率，也就是每条边和原本相同的值的概率
+            # TO DO：确定outputs的输出形状，如果原始边连接矩阵的形状是K，总共有x个label，那就应该是K*x，然后softmax找原始Label概率
 
             self.loss += Cal_ProbLoss(self.loss, self.outputs, self.placeholders['edges'])
-            #tf.scalar_summary('loss', self.loss)
+            # tf.scalar_summary('loss', self.loss)
 
             tf.summary.scalar('loss', self.loss)
 
@@ -142,37 +149,35 @@ class mGLAD(Model):
         print(tf.argmax(self.outputs, 2).dtype)
         print(self.placeholders['edges'].dtype)
         with tf.name_scope('accuracy'):
-            self.accuracy =  tf.reduce_mean(tf.cast(
-                tf.equal(tf.cast(tf.argmax(self.outputs, 2),float), tf.cast(self.placeholders['edges'],float)),
-                tf.float32),name='accuracy'
+            self.accuracy = tf.reduce_mean(tf.cast(
+                tf.equal(tf.cast(tf.argmax(self.outputs, 2), float), tf.cast(self.placeholders['edges'], float)),
+                tf.float32), name='accuracy'
             )
             tf.summary.scalar('accuracy', self.accuracy)
 
-
     def _build(self):
-
         print("[ model ] Building mGLAD model......")
         print("[ model ] Appending MPNN layer......")
-        self.layers.append(mpnn(input_dim = self.input_dim,
-                                edge_type = self.edge_type,
-                                ability_num = self.ability_num,
+        self.layers.append(mpnn(input_dim=self.input_dim,
+                                edge_type=self.edge_type,
+                                ability_num=self.ability_num,
                                 task_num=self.task_num,
                                 worker_num=self.worker_num,
-                                output_dim = [self.placeholders['worker_num']+self.placeholders['task_num'],
-                                              self.placeholders['ability_num']+self.placeholders['edge_type']],
-                                placeholders = self.placeholders,
-                                update_step = 3,
-                                logging = self.logging))
+                                output_dim=[self.placeholders['worker_num'] + self.placeholders['task_num'],
+                                            self.placeholders['ability_num'] + self.placeholders['edge_type']],
+                                placeholders=self.placeholders,
+                                update_step=5,
+                                logging=self.logging))
         print("[ model ] Appending Decoder layer......")
-        self.layers.append(Decoder(input_dim = [self.placeholders['worker_num']+self.placeholders['task_num'],
-                                              self.placeholders['ability_num']+self.placeholders['edge_type']],
+        self.layers.append(Decoder(input_dim=[self.placeholders['worker_num'] + self.placeholders['task_num'],
+                                              self.placeholders['ability_num'] + self.placeholders['edge_type']],
                                    edge_type=self.edge_type,
                                    worker_num=self.worker_num,
                                    task_num=self.task_num,
                                    ability_num=self.ability_num,
-                                    output_dim = self.output_dim,
-                                    placeholders = self.placeholders))
+                                   output_dim=self.output_dim,
+                                   placeholders=self.placeholders))
         print("[ model ] Build finished.")
 
     def predict(self):
-        return tf.argmax(self.outputs,axis=2,name='predict')
+        return tf.argmax(self.outputs, axis=2, name='predict')
