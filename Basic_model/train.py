@@ -31,12 +31,13 @@ flags.DEFINE_integer('ability_num', 300, 'Weight for L2 loss on embedding matrix
 #flags.DEFINE_integer('max_degree', 3, 'Maximum Chebyshev polynomial degree.')
 
 # Load data
-BlueBird_shape,worker_num,task_num,edge_type,edges,true_labels = read_BlueBirds()
+#shape,worker_num,task_num,edge_type,edges,true_labels = read_BlueBirds()
+shape,worker_num,task_num,edge_type,edges,true_labels = read_duck()
 print(true_labels)
 model_func = mGLAD
 # Define placeholders
 placeholders = {
-    'edges': tf.placeholder(tf.int32,shape=BlueBird_shape),
+    'edges': tf.placeholder(tf.int32,shape=shape),
     'worker_num': tf.placeholder(tf.int32),
     'task_num': tf.placeholder(tf.int32),
     'edge_type':tf.placeholder(tf.int32),

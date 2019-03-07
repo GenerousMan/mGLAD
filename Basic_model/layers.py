@@ -155,13 +155,15 @@ class mpnn(Layer):
 
             def body_a(j, update_a, update_t):
                 # 用于循环迭代每一轮a的更新
-                def cond_tau(jj, update_a, update_t):
+                def cond_tau(jj,count,  update_a, update_t):
                     # 用于判断是否迭代完了每一个worker
 
                     return jj < self.task_num
 
-                def body_tau(jj, update_a, update_t):
+                def body_tau(jj, count, update_a, update_t):
                     # 用于针对每一个worker的ability，都根据原始label选择对应矩阵相乘
+                    if(inputs[j][jj]==-1):
+                        return jj + 1, count, update_a, update_t
                     now_t = update_t[jj]  # 根据这条边是啥取用指定tau里的值，维度 1*2
 
                     A2_label = self.Vars["Awij2"][inputs[j][jj]]
@@ -176,15 +178,17 @@ class mpnn(Layer):
                                        name='each_tau_x_its_A2'),
                                 update_a[j + 1:]
                             ], axis=0, name='now_update_a'),
-                        (39, -1)
+                        (self.worker_num, -1)
                     )
                     # update_a_final=tf.concat(update_a_final,update_aj,axis=0)
                     # 将update_a的第j个worker的得分进行一个累加计算
 
-                    return jj + 1, update_a, update_t
+                    return jj + 1, count+1, update_a, update_t
 
-                _, update_a, update_t = tf.while_loop(cond_tau, body_tau, [0, update_a, update_t],
+                _,count,update_a, update_t = tf.while_loop(cond_tau, body_tau, [0, 0,update_a, update_t],
                                                       name='MPNN_each_t_for_a')
+                update_a=update_a*(tf.cast(self.task_num,tf.float32)/tf.cast(count,tf.float32))
+                #不知道为啥，一除就凉，变瞎猜。
 
                 return j + 1, update_a, update_t
 
@@ -196,6 +200,8 @@ class mpnn(Layer):
                     return kk < self.worker_num
 
                 def body_aj(kk, update_a, update_t):
+                    if(inputs[kk][k]==-1):
+                        return kk + 1, update_a, update_t
                     A_label = self.Vars["Awij"][inputs[kk][k]]
                     # 根据不同label取用不同矩阵，存在本次A_label中
 
@@ -208,7 +214,7 @@ class mpnn(Layer):
                                                  A_label), name='each_a_x_its_A'),
                                 update_t[k + 1:]
                             ],
-                            axis=0), (108, -1), name='now_update_t')
+                            axis=0), (self.task_num, -1), name='now_update_t')
 
                     # 1*10 x 10*2  = 1*2
                     return kk + 1, update_a, update_t

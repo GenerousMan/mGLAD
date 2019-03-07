@@ -119,6 +119,8 @@ class mGLAD(Model):
 
                 def body_task(j, loss_now):
                     # 对loss进行累加运算
+                    if(edges[i][j]==-1):
+                        return j+1,loss_now
                     loss_now = tf.add(loss_now, P[i][j][edges[i][j]])
                     # loss_now = tf.add(loss_now, tf.log(1- P[i][j][edges[i][j]]))
                     return j + 1, loss_now
