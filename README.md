@@ -1,2 +1,2 @@
 # mGLAD
-mGLAD for IBM &amp; ZJU group.
+mGLAD, the model of IBM &amp; ZJU group.
