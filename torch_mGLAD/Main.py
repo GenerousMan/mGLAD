@@ -235,7 +235,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='mGLAD')
     parser.add_argument("--dropout", type=float, default=0.2,
             help="dropout probability")
-    parser.add_argument("--n-hidden", type=int, default=300,
+    parser.add_argument("--n-hidden", type=int, default=600,
             help="number of hidden units")
     parser.add_argument("--gpu", type=int, default=-1,
             help="gpu")
