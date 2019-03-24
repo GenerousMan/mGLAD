@@ -25,6 +25,10 @@ class GladLayer(nn.Module):
         # 参数weight。有边的类别个矩阵，每个矩阵大小为[in_feat,out_feat]
         self.weight_task = nn.Parameter(torch.Tensor(self.num_bases, self.wkr_feat,
                                                 self.tsk_feat))
+        nn.init.xavier_uniform_(self.weight_worker,
+                                gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self.weight_task,
+                                gain=nn.init.calculate_gain('relu'))
 
     # feature的选择：
     # 本部分feature让所有节点都有ability和label的feature，但是非自己部分的feature均为0。
@@ -38,6 +42,7 @@ class GladLayer(nn.Module):
         wkr_weight_type = self.weight_worker.index_select(0, torch.from_numpy(edges.data['type']))
         #print(self.weight_worker.shape)
         tsk_weight_type = self.weight_task.index_select(0, torch.from_numpy(edges.data['type']))
+
 
         #print(wkr_weight_type.shape)
         #对权重进行选择

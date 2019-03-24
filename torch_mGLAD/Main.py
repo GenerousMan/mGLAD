@@ -125,7 +125,7 @@ class GLADLinkPredict(nn.Module):
 
 def main(args):
     # load graph data
-    data,num_nodes,num_rels,wkr_num,true_labels = read_BlueBirds()
+    data,num_nodes,num_rels,wkr_num,true_labels = read_Flowers()
     print(data)
     # TODO: 数据集部分需要修改，
     #  此处数据集的形状： [ src node, type, dest node ]。
@@ -204,7 +204,7 @@ def main(args):
         t0 = time.time()
         embedding,loss = model.get_loss(g, data)
         # 这个地方的data是单向图，并不存在反向边
-        predict_label=np.argmax(embedding['labels'][range(wkr_num,num_nodes)].detach().numpy(),axis=2)
+        predict_label=np.argmin(embedding['labels'][range(wkr_num,num_nodes)].detach().numpy(),axis=2)
         predict_label.shape=num_nodes-wkr_num
         true_labels.shape=num_nodes-wkr_num
         mrr=np.sum(np.equal(predict_label,true_labels))/(num_nodes-wkr_num)
@@ -239,7 +239,7 @@ if __name__ == '__main__':
             help="number of hidden units")
     parser.add_argument("--gpu", type=int, default=-1,
             help="gpu")
-    parser.add_argument("--lr", type=float, default=1e-4,
+    parser.add_argument("--lr", type=float, default=1e-2,
             help="learning rate")
     parser.add_argument("--n-bases", type=int, default=100,
             help="number of weight blocks for each relation")

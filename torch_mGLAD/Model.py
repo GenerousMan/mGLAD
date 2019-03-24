@@ -42,6 +42,10 @@ class mGLAD(nn.Module):
 
         h2h = self.build_hidden_layer()
         self.layers.append(h2h)
+        h2h = self.build_hidden_layer()
+        self.layers.append(h2h)
+        h2h = self.build_hidden_layer()
+        self.layers.append(h2h)
 
         h2o = self.build_output_layer()
         if h2o is not None:
