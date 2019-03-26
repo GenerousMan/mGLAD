@@ -2,7 +2,7 @@ import torch.nn as nn
 from Layer import GladLayer,DecodeLayer
 
 class mGLAD(nn.Module):
-    def __init__(self, num_nodes, wkr_dim, tsk_dim, num_rels, num_bases=-1,
+    def __init__(self, num_nodes,wkr_num, wkr_dim, tsk_dim, num_rels, num_bases=-1,
                  num_hidden_layers=1, dropout=0, use_cuda=False):
         super(mGLAD, self).__init__()
         self.num_nodes = num_nodes
@@ -13,6 +13,7 @@ class mGLAD(nn.Module):
         self.num_hidden_layers = num_hidden_layers
         self.dropout = dropout
         self.use_cuda = use_cuda
+        self.wkr_num=wkr_num
 
         # create rgcn layers
         self.build_model()
@@ -63,7 +64,7 @@ class mGLAD(nn.Module):
 
         # 这个函数在建立GLAD layer，但是目前还没有对层数进行限制
 
-        return GladLayer(wkr_feat=self.wkr_dim, tsk_feat=self.tsk_dim, num_rels=self.num_rels)
+        return GladLayer(wkr_feat=self.wkr_dim,wkr_num=self.wkr_num, tsk_feat=self.tsk_dim, num_rels=self.num_rels)
 
     def build_output_layer(self):
         return None
@@ -109,6 +110,10 @@ class Decoder(nn.Module):
 
         h2h = self.build_hidden_layer()
         self.layers.append(h2h)
+        # h2h = self.build_hidden_layer()
+        # self.layers.append(h2h)
+        # h2h = self.build_hidden_layer()
+        # self.layers.append(h2h)
 
         h2o = self.build_output_layer()
         if h2o is not None:

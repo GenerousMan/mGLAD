@@ -17,9 +17,10 @@ import random
 from dgl.contrib.data import load_data
 
 from Model import mGLAD
-
-
+import numpy as np
+import matplotlib.pyplot as plt
 from utils import *
+
 
 # 要注意，本部分代码的设置如下：
 #  1.输入的边信息是双向的，所有wkr,tsk都有两向连接关系，
@@ -31,15 +32,6 @@ from utils import *
 #  3.输出embbeding预测和边准确度预测
 
 
-class EmbeddingLayer(nn.Module):
-    def __init__(self, num_nodes, h_dim):
-        super(EmbeddingLayer, self).__init__()
-        self.embedding = torch.nn.Embedding(num_nodes, h_dim)
-
-    def forward(self, g):
-        node_id = g.ndata['id'].squeeze()
-        g.ndata['h'] = self.embedding(node_id)
-
 class GLADLinkPredict(nn.Module):
 
     # 这个地方应该就是咱们最后的模型
@@ -50,16 +42,18 @@ class GLADLinkPredict(nn.Module):
     # TODO 2: 改变中间的层结构，将latent variable赋予真实意义，即worker['label']里的message必须有存在意义
     # TODO 3: 改变loss定义函数。将edge 的类别算入考虑
 
-    def __init__(self, num_nodes, wkr_dim, tsk_dim, num_rels, num_bases=-1,
+    def __init__(self, num_nodes, wkr_num, wkr_dim, tsk_dim, num_rels, num_bases=-1,
                  num_hidden_layers=1, dropout=0, use_cuda=False, reg_param=0):
         super(GLADLinkPredict, self).__init__()
-        self.wkr_dim=wkr_dim
-        self.tsk_dim=tsk_dim
-        self.num_rels=num_rels
-        self.mGLAD = mGLAD(num_nodes=num_nodes, wkr_dim=self.wkr_dim, tsk_dim=self.tsk_dim, num_rels=self.num_rels)
+        self.wkr_dim = wkr_dim
+        self.tsk_dim = tsk_dim
+        self.wkr_num = wkr_num
+        self.num_rels = num_rels
+        self.mGLAD = mGLAD(num_nodes=num_nodes, wkr_num=wkr_num, wkr_dim=self.wkr_dim, tsk_dim=self.tsk_dim,
+                           num_rels=self.num_rels)
 
         self.reg_param = reg_param
-        self.w_relation = nn.Parameter(torch.Tensor(wkr_dim,1))
+        self.w_relation = nn.Parameter(torch.Tensor(wkr_dim, 1))
         self.bias = nn.Parameter(torch.Tensor(1))
         nn.init.xavier_uniform_(self.w_relation,
                                 gain=nn.init.calculate_gain('relu'))
@@ -68,38 +62,38 @@ class GLADLinkPredict(nn.Module):
         # DistMult
         # 这个地方的triplets不能有两向边，只能单向
 
-        #print("[ *** ] now triplets' shape:", triplets)
+        # print("[ *** ] now triplets' shape:", triplets)
         relation = triplets[:, 1]
         # 所有的relations关系，取出所有的边即可
 
-        tsk = triplets[:,2]
+        tsk = triplets[:, 2]
         # 所有的tsk节点编号，是一个list，将其ability取出
         # 之后要取出里面所有指定的label feature
 
-        wkr = triplets[:,0]
-        #print(wkr.shape)
+        wkr = triplets[:, 0]
+        # print(wkr.shape)
         # 所有的wkr节点编号，一个list，
         # 将所有ability feature取出
-        #print(nodes)
-        wkr_feature=nodes['ability'][torch.from_numpy(wkr.astype(int))]
-        #print("[ *** ] worker 's features now we choose is:", wkr_feature)
+        # print(nodes)
+        wkr_feature = nodes['ability'][torch.from_numpy(wkr.astype(int)).long()]
+        # print("[ *** ] worker 's features now we choose is:", wkr_feature)
 
-        tsk_feature=nodes['labels'][torch.from_numpy(tsk.astype(int)),:,relation]
-        #print("[ *** ] task 's features  now are:", nodes['labels'][torch.from_numpy(tsk.astype(int)),:,relation].shape)
+        tsk_feature = nodes['labels'][torch.from_numpy(tsk.astype(int)).long(), :, relation]
+        # print("[ *** ] task 's features  now are:", nodes['labels'][torch.from_numpy(tsk.astype(int)).long(),:,relation].data)
 
-        score_part1 = torch.sigmoid((torch.matmul(wkr_feature,self.w_relation)+self.bias))
-        #print("[ *** ] wkr feature is: ",nodes['ability'])
-        #print("[ *** ] after choosing:",wkr_feature)
-        #print("[ *** ] w relation is: ", self.w_relation)
-        #print("[ *** ] before sigmoid:",(torch.matmul(wkr_feature,self.w_relation)+self.bias))
+        score_part1 = torch.sigmoid((torch.matmul(wkr_feature, self.w_relation) + self.bias))
+        # print("[ *** ] wkr feature is: ",nodes['ability'])
+        # print("[ *** ] after choosing:",wkr_feature)
+        # print("[ *** ] w relation is: ", self.w_relation)
+        # print("[ *** ] before sigmoid:",(torch.matmul(wkr_feature,self.w_relation)+self.bias))
 
-        score_part2 = (1-score_part1)/(self.num_rels-1)
+        score_part2 = (1 - score_part1) / (self.num_rels - 1)
 
-        score = torch.pow(score_part1,tsk_feature)*torch.pow(score_part2,1-tsk_feature)
+        score = score_part1 * tsk_feature + score_part2 * (1 - tsk_feature)
 
         # TODO: 要检查本部分代码正确性。因为是批处理，所以需要小心维度等信息
 
-        #print("[ *** ]score's shape:", (torch.matmul(wkr_feature,self.w_relation)+self.bias))
+        # print("[ *** ]score's shape:", (torch.matmul(wkr_feature,self.w_relation)+self.bias).shape)
         return score
 
     def forward(self, g):
@@ -118,14 +112,28 @@ class GLADLinkPredict(nn.Module):
         # each row in the triplets is a 3-tuple of (source, relation, destination)
         embedding = self.forward(g)
         score = self.calc_score(embedding, triplets)
-        predict_loss = -1*torch.log(torch.sum(score))
-        #reg_loss = self.regularization_loss(embedding)
-        return embedding,predict_loss
+        predict_loss = -1 * torch.sum(torch.log(score))
+        # reg_loss = self.regularization_loss(embedding)
+        return embedding, predict_loss
+
+
+def draw(acc, loss):
+    # loss: numpy
+
+    x = range(len(acc))
+    y1 = acc
+    y2 = loss
+    fig = plt.figure()
+    ax1 = fig.add_subplot(211)
+    ax1.plot(x, y1, label='acc')
+    ax2 = fig.add_subplot(212)
+    ax2.plot(x, y2, label='loss')
+    plt.show()
 
 
 def main(args):
     # load graph data
-    data,num_nodes,num_rels,wkr_num,true_labels = read_Flowers()
+    data, num_nodes, num_rels, wkr_num, true_labels = read_BlueBirds()
     print(data)
     # TODO: 数据集部分需要修改，
     #  此处数据集的形状： [ src node, type, dest node ]。
@@ -134,11 +142,11 @@ def main(args):
     #  然后所有的节点都得反过来存一遍。
 
     train_data = data
-    #print("[ *** ] training data:", train_data.shape)
+    # print("[ *** ] training data:", train_data.shape)
     valid_data = data
-    #print("[ *** ] validating data:", valid_data.shape)
+    # print("[ *** ] validating data:", valid_data.shape)
     test_data = data
-    #print("[ *** ] testing data:", test_data)
+    # print("[ *** ] testing data:", test_data)
 
     # check cuda
     use_cuda = args.gpu >= 0 and torch.cuda.is_available()
@@ -147,14 +155,15 @@ def main(args):
 
     # create model
     model = GLADLinkPredict(num_nodes=num_nodes,
-                        wkr_dim=args.n_hidden,
-                        tsk_dim=num_rels,
-                        num_rels=num_rels,
-                        num_bases=args.n_bases,
-                        num_hidden_layers=args.n_layers,
-                        dropout=args.dropout,
-                        use_cuda=use_cuda,
-                        reg_param=args.regularization)
+                            wkr_dim=args.n_hidden,
+                            tsk_dim=num_rels,
+                            wkr_num=wkr_num,
+                            num_rels=num_rels,
+                            num_bases=args.n_bases,
+                            num_hidden_layers=args.n_layers,
+                            dropout=args.dropout,
+                            use_cuda=use_cuda,
+                            reg_param=args.regularization)
 
     # validation and testing triplets
     valid_data = torch.LongTensor(valid_data)
@@ -172,46 +181,57 @@ def main(args):
 
     epoch = 0
     best_mrr = 0
-    transverse_data=data[:,[2,1,0]]
-    triplets_before=np.concatenate((data,transverse_data),axis=0)
-    triplets=(data[:,0],data[:,1],data[:,2])
-    #print("[ *** ]triplets: ", triplets)
+    transverse_data = data[:, [2, 1, 0]]
+    triplets_before = np.concatenate((data, transverse_data), axis=0)
+    triplets = (data[:, 0], data[:, 1], data[:, 2])
+    loss_all = []
+    acc_all = []
+
+    # print("[ *** ]triplets: ", triplets)
     if use_cuda:
         model.cuda()
+
     while True:
         model.train()
         epoch += 1
 
-        g,rel,_= build_graph_from_triplets(num_nodes, num_rels, triplets)
-        #print("[ *** ] Shape of triplets_before:",triplets_before.shape)
-        g.edata['type'] = triplets_before[:,1].astype(int)
+        g, rel, _ = build_graph_from_triplets(num_nodes, num_rels, triplets)
+        # print("[ *** ] Shape of triplets_before:",triplets_before.shape)
+        g.edata['type'] = triplets_before[:, 1].astype(int)
 
-        g.ndata['labels']=torch.zeros(num_nodes,1,num_rels)
-        g.ndata['ability']=torch.zeros(num_nodes,1,args.n_hidden)
-        g.ndata['deg'] = g.out_degrees(g.nodes()).float().view(-1,1,1)
-        g.nodes[range(wkr_num)].data['labels']=torch.zeros(wkr_num,1,num_rels)
-        g.nodes[range(wkr_num,num_nodes)].data['labels'] = torch.rand(num_nodes-wkr_num,1, num_rels)
+        g.ndata['labels'] = torch.zeros(num_nodes, 1, num_rels)
+        g.ndata['ability'] = torch.zeros(num_nodes, 1, args.n_hidden)
+        g.ndata['deg'] = g.out_degrees(g.nodes()).float().view(-1, 1, 1)
+        g.nodes[range(wkr_num)].data['labels'] = torch.zeros(wkr_num, 1, num_rels)
+        g.nodes[range(wkr_num, num_nodes)].data['labels'] = torch.rand(num_nodes - wkr_num, 1, num_rels)
 
-        g.nodes[range(wkr_num)].data['ability'] = torch.rand(wkr_num,1, args.n_hidden)
-        g.nodes[range(wkr_num,num_nodes)].data['ability'] = torch.zeros(num_nodes-wkr_num,1, args.n_hidden)
+        g.nodes[range(wkr_num)].data['ability'] = torch.rand(wkr_num, 1, args.n_hidden)
+        g.nodes[range(wkr_num, num_nodes)].data['ability'] = torch.zeros(num_nodes - wkr_num, 1, args.n_hidden)
 
-        #print("[ *** ] beginning: ",g.ndata['labels'])
-        #print("[ *** ] Graph:",g)
+        # print("[ *** ] beginning: ",g.ndata['labels'])
+        # print("[ *** ] Graph:",g)
 
         # 这个图应该就是普通的DGLGraph
         # 这个地方进行了采样，但是edge的量都极大，我们应该暂时不需要采样。
         # 本部分掠过
         t0 = time.time()
-        embedding,loss = model.get_loss(g, data)
+        embedding, loss = model.get_loss(g, data)
         # 这个地方的data是单向图，并不存在反向边
-        predict_label=np.argmin(embedding['labels'][range(wkr_num,num_nodes)].detach().numpy(),axis=2)
-        predict_label.shape=num_nodes-wkr_num
-        true_labels.shape=num_nodes-wkr_num
-        mrr=np.sum(np.equal(predict_label,true_labels))/(num_nodes-wkr_num)
+        predict_label = np.argmax(embedding['labels'][range(wkr_num, num_nodes)].detach().numpy(), axis=2)
+        # print("[ data ] Each Wkr features: ",embedding['ability'])
+        # print("[ data ] Each Tsk features: ", embedding['labels'])
+        predict_label.shape = num_nodes - wkr_num
+        true_labels.shape = num_nodes - wkr_num
+        mrr = np.sum(np.equal(predict_label, true_labels)) / (num_nodes - wkr_num)
+        acc_all.append(mrr)
+        loss_all.append(loss)
+
+        if mrr > best_mrr:
+            best_mrr = mrr
         print(mrr)
         t1 = time.time()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_norm) # clip gradients
+        torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_norm)  # clip gradients
         optimizer.step()
         t2 = time.time()
         forward_time.append(t1 - t0)
@@ -221,50 +241,52 @@ def main(args):
 
         optimizer.zero_grad()
 
+        # if epoch % 50 ==0 :
+        #     draw(np.array(acc_all),np.array(loss_all))
+
         if epoch >= args.n_epochs:
             torch.save({'state_dict': model.state_dict(), 'epoch': epoch},
-                           model_state_file)
+                       model_state_file)
             break
 
     print("training done")
-    print("Mean forward time: {:4f}s".format(np.mean(forward_time)))
-    print("Mean Backward time: {:4f}s".format(np.mean(backward_time)))
+    # print("Mean forward time: {:4f}s".format(np.mean(forward_time)))
+    # print("Mean Backward time: {:4f}s".format(np.mean(backward_time)))
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='mGLAD')
-    parser.add_argument("--dropout", type=float, default=0.2,
-            help="dropout probability")
-    parser.add_argument("--n-hidden", type=int, default=600,
-            help="number of hidden units")
+    parser.add_argument("--dropout", type=float, default=0.1,
+                        help="dropout probability")
+    parser.add_argument("--n-hidden", type=int, default=300,  # !
+                        help="number of hidden units")
     parser.add_argument("--gpu", type=int, default=-1,
-            help="gpu")
-    parser.add_argument("--lr", type=float, default=1e-2,
-            help="learning rate")
-    parser.add_argument("--n-bases", type=int, default=100,
-            help="number of weight blocks for each relation")
+                        help="gpu")
+    parser.add_argument("--lr", type=float, default=1e-4,  # lr
+                        help="learning rate")
+    parser.add_argument("--n-bases", type=int, default=200,
+                        help="number of weight blocks for each relation")
     parser.add_argument("--n-layers", type=int, default=2,
-            help="number of propagation rounds")
+                        help="number of propagation rounds")
     parser.add_argument("--n-epochs", type=int, default=6000,
-            help="number of minimum training epochs")
+                        help="number of minimum training epochs")
     parser.add_argument("-d", "--dataset", type=str, required=False,
-            help="dataset to use")
+                        help="dataset to use")
     parser.add_argument("--eval-batch-size", type=int, default=500,
-            help="batch size when evaluating")
+                        help="batch size when evaluating")
     parser.add_argument("--regularization", type=float, default=0.01,
-            help="regularization weight")
+                        help="regularization weight")
     parser.add_argument("--grad-norm", type=float, default=1.0,
-            help="norm to clip gradient to")
+                        help="norm to clip gradient to")
     parser.add_argument("--graph-batch-size", type=int, default=30000,
-            help="number of edges to sample in each iteration")
+                        help="number of edges to sample in each iteration")
     parser.add_argument("--graph-split-size", type=float, default=0.5,
-            help="portion of edges used as positive sample")
+                        help="portion of edges used as positive sample")
     parser.add_argument("--negative-sample", type=int, default=10,
-            help="number of negative samples per positive sample")
+                        help="number of negative samples per positive sample")
     parser.add_argument("--evaluate-every", type=int, default=500,
-            help="perform evaluation every n epochs")
+                        help="perform evaluation every n epochs")
 
     args = parser.parse_args()
     print(args)
     main(args)
-

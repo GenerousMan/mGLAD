@@ -2,19 +2,22 @@ import torch
 import torch.nn as nn
 import dgl.function as fn
 import torch.nn.functional as F
+import matplotlib
+
 #这个地方的设计现在有两个方向：
 # 1.一口气更新两类节点
 # 2.对两类节点分两层更新
 
 class GladLayer(nn.Module):
 
-    def __init__(self, wkr_feat, tsk_feat, num_rels, num_bases=-1, bias=None,
+    def __init__(self, wkr_feat, tsk_feat, num_rels,wkr_num, num_bases=-1, bias=None,
                  activation=None, is_input_layer=False):
         super(GladLayer, self).__init__()
         self.wkr_feat = wkr_feat
         self.tsk_feat = tsk_feat
         self.num_rels = num_rels
         self.num_bases = num_bases
+        self.wkr_num = wkr_num
         if self.num_bases <= 0 or self.num_bases > self.num_rels:
             self.num_bases = self.num_rels
         # 这个地方，bases便是边的类别，用于后面的weight的定义
@@ -39,14 +42,16 @@ class GladLayer(nn.Module):
 
 
     def msg_func(self, edges):
-        wkr_weight_type = self.weight_worker.index_select(0, torch.from_numpy(edges.data['type']))
+        wkr_weight_type = self.weight_worker.index_select(0, torch.from_numpy(edges.data['type']).long())
         #print(self.weight_worker.shape)
-        tsk_weight_type = self.weight_task.index_select(0, torch.from_numpy(edges.data['type']))
+        tsk_weight_type = self.weight_task.index_select(0, torch.from_numpy(edges.data['type']).long())
+
+        edges.src['labels'][:self.wkr_num]=torch.zeros(self.wkr_num,1,self.num_rels)
 
 
         #print(wkr_weight_type.shape)
         #对权重进行选择
-        #print(edges.src['labels'].shape)
+        #print(edges.src['labels'])
         update_wkr_feature = torch.div(torch.bmm(edges.src['labels'],(wkr_weight_type)),edges.dst['deg'])
         #这个地方给每个量除以了出度，直接相加就行
 
@@ -54,14 +59,16 @@ class GladLayer(nn.Module):
         #print("[ *** ] update_wkr_feature_shape = ",update_wkr_feature)
 
         # 这个地方对每个边都采样，所以很多的起始点是一样的，值也一样
-        print("[ *** ] labels:", edges.dst['labels'])
+        #print("[ *** ] labels:", edges.dst['labels'])
 
-        print("[ *** ] ability:", edges.dst['ability'])
+        #print("[ *** ] ability:", edges.dst['ability'])
         return {'labels': update_tsk_feature,'ability': update_wkr_feature}
 
     def red_func(self,nodes):
         #print(nodes)
-        return{'labels':  F.softmax(torch.sum(nodes.mailbox['labels'], dim=1)),
+        # print('!!',torch.sum(nodes.mailbox['labels'],dim=1).data,torch.sum(nodes.mailbox['labels'],dim=1).data.shape)
+        #print('====',F.softmax(torch.sum(nodes.mailbox['labels'], dim=1),dim=2))
+        return{'labels':  F.softmax(torch.sum(nodes.mailbox['labels'], dim=1),dim=2),
                'ability': torch.sum(nodes.mailbox['ability'], dim=1)}
     def forward(self, g):
         g.update_all(message_func=self.msg_func, reduce_func=self.red_func)
