@@ -6,7 +6,7 @@ Code: https://github.com/MichSchli/RelationPrediction
 Difference compared to MichSchli/RelationPrediction
 * report raw metrics instead of filtered metrics
 """
-
+import math
 import argparse
 import numpy as np
 import time
@@ -58,12 +58,15 @@ class GLADLinkPredict(nn.Module):
         nn.init.xavier_uniform_(self.w_relation,
                                 gain=nn.init.calculate_gain('relu'))
 
+
+
+
     def calc_score(self, nodes, triplets):
         # DistMult
         # 这个地方的triplets不能有两向边，只能单向
 
         # print("[ *** ] now triplets' shape:", triplets)
-        relation = triplets[:, 1]
+        relation = triplets[:, 1]  # numpy.ndarray
         # 所有的relations关系，取出所有的边即可
 
         tsk = triplets[:, 2]
@@ -77,24 +80,36 @@ class GLADLinkPredict(nn.Module):
         # print(nodes)
         wkr_feature = nodes['ability'][torch.from_numpy(wkr.astype(int)).long()]
         # print("[ *** ] worker 's features now we choose is:", wkr_feature)
-
-        tsk_feature = nodes['labels'][torch.from_numpy(tsk.astype(int)).long(), :, relation]
+        # print(wkr_feature.shape)
+        # tsk_feature = nodes['labels'][torch.from_numpy(tsk.astype(int)).long(), :, relation]
+        tsk_feature = nodes['labels'][torch.from_numpy(tsk.astype(int)).long()]
+        # print('tau',tsk_feature)
         # print("[ *** ] task 's features  now are:", nodes['labels'][torch.from_numpy(tsk.astype(int)).long(),:,relation].data)
 
         score_part1 = torch.sigmoid((torch.matmul(wkr_feature, self.w_relation) + self.bias))
+        # print('wkr_feature.shape', wkr_feature.shape)
+        # print('self.w_relation', self.w_relation.shape)
+        # print('score_part1', score_part1.shape)
+
         # print("[ *** ] wkr feature is: ",nodes['ability'])
         # print("[ *** ] after choosing:",wkr_feature)
         # print("[ *** ] w relation is: ", self.w_relation)
         # print("[ *** ] before sigmoid:",(torch.matmul(wkr_feature,self.w_relation)+self.bias))
 
         score_part2 = (1 - score_part1) / (self.num_rels - 1)
+        # print('score_part1',score_part1.shape,score_part1)  #[4212,1,1]
+        # print('tsk_feature',tsk_feature.shape,tsk_feature)  #[4212,1,2]
 
-        score = score_part1 * tsk_feature + score_part2 * (1 - tsk_feature)
+        score = torch.matmul(score_part1,tsk_feature)+torch.matmul(score_part2,(1-tsk_feature))
+        # score = torch.pow(score_part1, tsk_feature) + torch.pow(score_part2, 1 - tsk_feature)
 
         # TODO: 要检查本部分代码正确性。因为是批处理，所以需要小心维度等信息
 
-        # print("[ *** ]score's shape:", (torch.matmul(wkr_feature,self.w_relation)+self.bias).shape)
         return score
+
+
+
+
 
     def forward(self, g):
         return self.mGLAD.forward(g)
@@ -108,11 +123,19 @@ class GLADLinkPredict(nn.Module):
         return torch.mean(embedding.pow(2)) + torch.mean(self.w_relation.pow(2))
 
     def get_loss(self, g, triplets):
+        #TODO 这边还有问题，把所有p(y_ji)都加上了，应该改成 p(y_ji=l)
         # triplets is a list of data samples (positive and negative)
         # each row in the triplets is a 3-tuple of (source, relation, destination)
         embedding = self.forward(g)
-        score = self.calc_score(embedding, triplets)
+        # score = self.calc_score(embedding, triplets)
+        # print(score.shape)
+        # print(score)
+        # predict_loss = -1 * torch.sum(torch.log(score))
+        # print(predict_loss)
+        score = self.calc_score(embedding,triplets)
         predict_loss = -1 * torch.sum(torch.log(score))
+        print('predict_loss',predict_loss.shape,predict_loss)  #[4212,1,2]
+
         # reg_loss = self.regularization_loss(embedding)
         return embedding, predict_loss
 
@@ -134,7 +157,6 @@ def draw(acc, loss):
 def main(args):
     # load graph data
     data, num_nodes, num_rels, wkr_num, true_labels = read_BlueBirds()
-    print(data)
     # TODO: 数据集部分需要修改，
     #  此处数据集的形状： [ src node, type, dest node ]。
     #  基本上就是[ worker, type, task ]，
@@ -202,14 +224,19 @@ def main(args):
         g.ndata['labels'] = torch.zeros(num_nodes, 1, num_rels)
         g.ndata['ability'] = torch.zeros(num_nodes, 1, args.n_hidden)
         g.ndata['deg'] = g.out_degrees(g.nodes()).float().view(-1, 1, 1)
+
+        # g.nodes[range(wkr_num)].data['labels'] = torch.zeros(wkr_num, 1, num_rels)
+        # g.nodes[range(wkr_num, num_nodes)].data['labels'] = torch.rand(num_nodes - wkr_num, 1, num_rels)
+        #
+        # g.nodes[range(wkr_num)].data['ability'] = torch.rand(wkr_num, 1, args.n_hidden)
+        # g.nodes[range(wkr_num, num_nodes)].data['ability'] = torch.zeros(num_nodes - wkr_num, 1, args.n_hidden)
+
+        # 这里改成初始值相同
         g.nodes[range(wkr_num)].data['labels'] = torch.zeros(wkr_num, 1, num_rels)
-        g.nodes[range(wkr_num, num_nodes)].data['labels'] = torch.rand(num_nodes - wkr_num, 1, num_rels)
+        g.nodes[range(wkr_num, num_nodes)].data['labels'] = torch.ones(num_nodes - wkr_num, 1, num_rels)
 
-        g.nodes[range(wkr_num)].data['ability'] = torch.rand(wkr_num, 1, args.n_hidden)
+        g.nodes[range(wkr_num)].data['ability'] = torch.ones(wkr_num, 1, args.n_hidden)
         g.nodes[range(wkr_num, num_nodes)].data['ability'] = torch.zeros(num_nodes - wkr_num, 1, args.n_hidden)
-
-        # print("[ *** ] beginning: ",g.ndata['labels'])
-        # print("[ *** ] Graph:",g)
 
         # 这个图应该就是普通的DGLGraph
         # 这个地方进行了采样，但是edge的量都极大，我们应该暂时不需要采样。
@@ -225,10 +252,9 @@ def main(args):
         mrr = np.sum(np.equal(predict_label, true_labels)) / (num_nodes - wkr_num)
         acc_all.append(mrr)
         loss_all.append(loss)
-
+        print(mrr)
         if mrr > best_mrr:
             best_mrr = mrr
-        print(mrr)
         t1 = time.time()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_norm)  # clip gradients
@@ -238,6 +264,16 @@ def main(args):
         backward_time.append(t2 - t1)
         print("Epoch {:04d} | Loss {:.4f} | Best MRR {:.4f} | Forward {:.4f}s | Backward {:.4f}s".
               format(epoch, loss.item(), best_mrr, forward_time[-1], backward_time[-1]))
+
+        # print('worker-label')
+        # print(g.nodes[range(wkr_num)].data['labels'])
+        # print('task-label')
+        # print(g.nodes[range(wkr_num, num_nodes)].data['labels'])
+        #
+        # print('worker-ability')
+        # print(g.nodes[range(wkr_num)].data['ability'])
+        # print('task-ability')
+        # print(g.nodes[range(wkr_num, num_nodes)].data['ability'])
 
         optimizer.zero_grad()
 
@@ -258,11 +294,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='mGLAD')
     parser.add_argument("--dropout", type=float, default=0.1,
                         help="dropout probability")
-    parser.add_argument("--n-hidden", type=int, default=300,  # !
+    parser.add_argument("--n-hidden", type=int, default=200,  # !
                         help="number of hidden units")
     parser.add_argument("--gpu", type=int, default=-1,
                         help="gpu")
-    parser.add_argument("--lr", type=float, default=1e-4,  # lr
+    parser.add_argument("--lr", type=float, default=1e-3,  # lr
                         help="learning rate")
     parser.add_argument("--n-bases", type=int, default=200,
                         help="number of weight blocks for each relation")

@@ -75,11 +75,9 @@ def read_BlueBirds():
     gtLabels = yaml.load(f)
     imgIds = gtLabels.keys(); numImg = len(gtLabels)
     imgId2Idx = dict((idx, id) for (idx, id) in enumerate(imgIds))
-    print(imgId2Idx)
     data = yaml.load(open("./bluebirds/labels.yaml"))
     dinfo = { 'numImg' : numImg, 'numTrial' : numTrial }
     dinfo['gt'] = [gtLabels[id] for id in imgIds]
-
     wkrIds = data.keys();
     wkrId2Idx = dict((idx, id) for (idx, id) in enumerate(wkrIds))
     print("[ data ] Dataset has ",len(wkrIds)," woker nodes, ",len(imgIds),"task nodes.")
@@ -94,7 +92,6 @@ def read_BlueBirds():
     TrueLabels=np.zeros(len(imgIds))
     for i in range(len(imgIds)):
         TrueLabels[i]=gtLabels[imgId2Idx[i]]
-
     return Graph2Edgelist(Graph),147,2,39,TrueLabels
 
 def read_Websites():
@@ -182,3 +179,5 @@ def comp_deg_norm(g):
     norm = 1.0 / in_deg
     norm[np.isinf(norm)] = 0
     return norm
+
+read_BlueBirds()
