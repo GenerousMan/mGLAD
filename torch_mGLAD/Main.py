@@ -54,9 +54,10 @@ class GLADLinkPredict(nn.Module):
 
         self.reg_param = reg_param
         self.w_relation = nn.Parameter(torch.Tensor(wkr_dim, 1))
-        self.bias = nn.Parameter(torch.Tensor(1))
+        self.bias = nn.Parameter(torch.Tensor(1,1))
         nn.init.xavier_uniform_(self.w_relation,
                                 gain=nn.init.calculate_gain('relu'))
+        nn.init.xavier_uniform_(self.bias, gain=nn.init.calculate_gain('relu'))
 
 
 
@@ -78,6 +79,9 @@ class GLADLinkPredict(nn.Module):
         # 所有的wkr节点编号，一个list，
         # 将所有ability feature取出
         # print(nodes)
+        nodes['labels'] = F.softmax(nodes['labels'], dim=2)
+        print(nodes['labels'])
+
         wkr_feature = nodes['ability'][torch.from_numpy(wkr.astype(int)).long()]
         # print("[ *** ] worker 's features now we choose is:", wkr_feature)
         # print(wkr_feature.shape)
@@ -87,15 +91,11 @@ class GLADLinkPredict(nn.Module):
         # print("[ *** ] task 's features  now are:", nodes['labels'][torch.from_numpy(tsk.astype(int)).long(),:,relation].data)
 
         score_part1 = torch.sigmoid((torch.matmul(wkr_feature, self.w_relation) + self.bias))
-        # print('wkr_feature.shape', wkr_feature.shape)
-        # print('self.w_relation', self.w_relation.shape)
-        # print('score_part1', score_part1.shape)
 
         # print("[ *** ] wkr feature is: ",nodes['ability'])
         # print("[ *** ] after choosing:",wkr_feature)
         # print("[ *** ] w relation is: ", self.w_relation)
         # print("[ *** ] before sigmoid:",(torch.matmul(wkr_feature,self.w_relation)+self.bias))
-
         score_part2 = (1 - score_part1) / (self.num_rels - 1)
         # print('score_part1',score_part1.shape,score_part1)  #[4212,1,1]
         # print('tsk_feature',tsk_feature.shape,tsk_feature)  #[4212,1,2]
@@ -132,8 +132,21 @@ class GLADLinkPredict(nn.Module):
         # print(score)
         # predict_loss = -1 * torch.sum(torch.log(score))
         # print(predict_loss)
+        relation=triplets[:,1]
+        relation.shape=[-1,1]
+        #print(relation.shape)
         score = self.calc_score(embedding,triplets)
-        predict_loss = -1 * torch.sum(torch.log(score))
+        score=torch.squeeze(score,1)
+        mask=torch.zeros(len(triplets),self.num_rels).scatter_(1, torch.LongTensor(relation), 1)
+        #print(mask.shape)
+
+        #score=score[:,0,relation]
+        #print(score)
+        #mask=torch.unsqueeze(mask, 1)
+        #print(mask)
+        #print(score)
+        #print(score*mask)
+        predict_loss = -1 * torch.sum(torch.log(score).mul(mask))
         print('predict_loss',predict_loss.shape,predict_loss)  #[4212,1,2]
 
         # reg_loss = self.regularization_loss(embedding)
@@ -213,10 +226,10 @@ def main(args):
     if use_cuda:
         model.cuda()
 
+
     while True:
         model.train()
         epoch += 1
-
         g, rel, _ = build_graph_from_triplets(num_nodes, num_rels, triplets)
         # print("[ *** ] Shape of triplets_before:",triplets_before.shape)
         g.edata['type'] = triplets_before[:, 1].astype(int)
@@ -224,7 +237,6 @@ def main(args):
         g.ndata['labels'] = torch.zeros(num_nodes, 1, num_rels)
         g.ndata['ability'] = torch.zeros(num_nodes, 1, args.n_hidden)
         g.ndata['deg'] = g.out_degrees(g.nodes()).float().view(-1, 1, 1)
-
         # g.nodes[range(wkr_num)].data['labels'] = torch.zeros(wkr_num, 1, num_rels)
         # g.nodes[range(wkr_num, num_nodes)].data['labels'] = torch.rand(num_nodes - wkr_num, 1, num_rels)
         #
@@ -242,11 +254,12 @@ def main(args):
         # 这个地方进行了采样，但是edge的量都极大，我们应该暂时不需要采样。
         # 本部分掠过
         t0 = time.time()
+
         embedding, loss = model.get_loss(g, data)
         # 这个地方的data是单向图，并不存在反向边
         predict_label = np.argmax(embedding['labels'][range(wkr_num, num_nodes)].detach().numpy(), axis=2)
         # print("[ data ] Each Wkr features: ",embedding['ability'])
-        # print("[ data ] Each Tsk features: ", embedding['labels'])
+        #print("[ data ] Each Tsk features: ", embedding['labels'])
         predict_label.shape = num_nodes - wkr_num
         true_labels.shape = num_nodes - wkr_num
         mrr = np.sum(np.equal(predict_label, true_labels)) / (num_nodes - wkr_num)
@@ -314,14 +327,14 @@ if __name__ == '__main__':
                         help="regularization weight")
     parser.add_argument("--grad-norm", type=float, default=1.0,
                         help="norm to clip gradient to")
-    parser.add_argument("--graph-batch-size", type=int, default=30000,
-                        help="number of edges to sample in each iteration")
-    parser.add_argument("--graph-split-size", type=float, default=0.5,
-                        help="portion of edges used as positive sample")
-    parser.add_argument("--negative-sample", type=int, default=10,
-                        help="number of negative samples per positive sample")
-    parser.add_argument("--evaluate-every", type=int, default=500,
-                        help="perform evaluation every n epochs")
+    # parser.add_argument("--graph-batch-size", type=int, default=30000,
+    #                     help="number of edges to sample in each iteration")
+    # parser.add_argument("--graph-split-size", type=float, default=0.5,
+    #                     help="portion of edges used as positive sample")
+    # parser.add_argument("--negative-sample", type=int, default=10,
+    #                     help="number of negative samples per positive sample")
+    # parser.add_argument("--evaluate-every", type=int, default=500,
+    #                     help="perform evaluation every n epochs")
 
     args = parser.parse_args()
     print(args)

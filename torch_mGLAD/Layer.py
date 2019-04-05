@@ -11,14 +11,16 @@ import matplotlib
 
 class GladLayer(nn.Module):
 
-    def __init__(self, wkr_feat, tsk_feat, num_rels, wkr_num, num_bases=-1, bias=None,
+    def __init__(self, num_nodes,wkr_feat, tsk_feat, num_rels, wkr_num, num_bases=-1, bias=None,
                  activation=None, is_input_layer=False):
         super(GladLayer, self).__init__()
         self.wkr_feat = wkr_feat
         self.tsk_feat = tsk_feat
+        self.num_nodes=num_nodes
         self.num_rels = num_rels
         self.num_bases = num_bases
         self.wkr_num = wkr_num
+        self.tsk_num = num_nodes-wkr_num
         if self.num_bases <= 0 or self.num_bases > self.num_rels:
             self.num_bases = self.num_rels
         # 这个地方，bases便是边的类别，用于后面的weight的定义
@@ -42,11 +44,12 @@ class GladLayer(nn.Module):
     # 反而可能因为流程的高度统一而让传播更具效率
 
     def msg_func(self, edges):
-        wkr_weight_type = self.weight_worker.index_select(0, torch.from_numpy(edges.data['type']).long())
 
-        tsk_weight_type = self.weight_task.index_select(0, torch.from_numpy(edges.data['type']).long())
+        wkr_weight_type = self.weight_worker[edges.data['type']]
+        tsk_weight_type = self.weight_task[edges.data['type']]
+        # print('edges.data[type]',type(edges.data['type']),edges.data['type'].shape,edges.data['type'])
 
-        edges.src['labels'][:self.wkr_num] = torch.zeros(self.wkr_num, 1, self.num_rels)
+
 
         # print(wkr_weight_type.shape)
         # 对权重进行选择
@@ -54,7 +57,6 @@ class GladLayer(nn.Module):
 
         update_wkr_feature = torch.div(torch.bmm(edges.src['labels'], (wkr_weight_type)), edges.dst['deg'])
         # 这个地方给每个量除以了出度，直接相加就行
-
         update_tsk_feature = torch.bmm(edges.src['ability'], (tsk_weight_type))
         # print("[ *** ] update_wkr_feature_shape = ",update_wkr_feature)
 
@@ -62,29 +64,23 @@ class GladLayer(nn.Module):
         # print("[ *** ] labels:", edges.dst['labels'])
 
         # print("[ *** ] ability:", edges.dst['ability'])
-        return {'labels': update_tsk_feature, 'ability': update_wkr_feature}
+        return {'msg_labels': update_tsk_feature, 'msg_ability': update_wkr_feature}
 
     def red_func(self, nodes):
         # print(nodes)
         # print('!!',torch.sum(nodes.mailbox['labels'],dim=1).data,torch.sum(nodes.mailbox['labels'],dim=1).data.shape)
         # print('====',F.softmax(torch.sum(nodes.mailbox['labels'], dim=1),dim=2))
-        return {'labels': F.softmax(torch.sum(nodes.mailbox['labels'], dim=1), dim=2),
-                'ability': F.sigmoid(torch.sum(nodes.mailbox['ability'], dim=1))}
+        #print(nodes.data['labels'].shape)
+
+        return {'labels': F.softmax(torch.sum(nodes.mailbox['msg_labels'], dim=1), dim=2),
+                'ability': F.sigmoid(torch.sum(nodes.mailbox['msg_ability'], dim=1))}
+        # return {'labels': F.sigmoid(torch.sum(nodes.mailbox['msg_labels'], dim=1)),
+        #         'ability': F.sigmoid(torch.sum(nodes.mailbox['msg_ability'], dim=1))}
+        # return {'labels': torch.sum(nodes.mailbox['msg_labels'], dim=1),
+        #         'ability': torch.sum(nodes.mailbox['msg_ability'], dim=1)}
 
     def forward(self, g):
+        g.nodes[range(self.wkr_num)].data['labels'] = torch.zeros(self.wkr_num, 1, self.num_rels)
+        g.nodes[range(self.wkr_num, self.num_nodes)].data['ability'] = torch.zeros(self.num_nodes - self.wkr_num, 1,
+                                                                                   self.wkr_feat)
         g.update_all(message_func=self.msg_func, reduce_func=self.red_func)
-
-
-class DecodeLayer(nn.Module):
-    def __init__(self, wkr_feat, tsk_feat, num_rels, num_bases=-1, bias=None,
-                 activation=None, is_input_layer=False):
-        super(DecodeLayer, self).__init__()
-        self.wkr_feat = wkr_feat
-        self.tsk_feat = tsk_feat
-        self.num_rels = num_rels
-        self.num_bases = num_bases
-        if self.num_bases <= 0 or self.num_bases > self.num_rels:
-            self.num_bases = self.num_rels
-
-        self.weight = nn.Parameter(torch.Tensor(self.wkr_feat, 1))
-        self.bias = nn.Parameter(torch.Tensor(1))
