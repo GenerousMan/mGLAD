@@ -2,7 +2,7 @@
 from layers import *
 
 # from metrics import *
-
+import scipy.stats
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 
@@ -106,6 +106,7 @@ class mGLAD(Model):
 
     def _loss(self):
         def Cal_ProbLoss(loss, P, edges):
+            print('P.shape',P.shape)
             # predict_edges' shape:(K*x)
             def cond_worker(i, loss_now):
                 # 判断第i个worker
@@ -121,7 +122,7 @@ class mGLAD(Model):
                     # 对loss进行累加运算
                     if(edges[i][j]==-1):
                         return j+1,loss_now
-                    loss_now = tf.add(loss_now, P[i][j][edges[i][j]])
+                    loss_now = tf.add(loss_now, tf.log((P[i][j][edges[i][j]])))
                     # loss_now = tf.add(loss_now, tf.log(1- P[i][j][edges[i][j]]))
                     return j + 1, loss_now
 
@@ -142,10 +143,14 @@ class mGLAD(Model):
             # 但是原文意思是要计算概率，也就是每条边和原本相同的值的概率
             # TO DO：确定outputs的输出形状，如果原始边连接矩阵的形状是K，总共有x个label，那就应该是K*x，然后softmax找原始Label概率
 
-            self.loss += -1*tf.log(Cal_ProbLoss(self.loss, self.outputs, self.placeholders['edges']))
+            self.loss += -1*Cal_ProbLoss(self.loss, self.outputs, self.placeholders['edges'])
             # tf.scalar_summary('loss', self.loss)
 
             tf.summary.scalar('loss', self.loss)
+
+
+        # self.loss += scipy.stats.entropy()
+
 
     def _accuracy(self):
         print(tf.argmax(self.outputs, 2).dtype)
