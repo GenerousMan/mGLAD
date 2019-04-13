@@ -26,6 +26,23 @@ def Graph2Edgelist(Graph):
                 # 把tsk节点存在wkr节点之后，编号顺序
     return np.array(edge_list)
 
+def Graph2r(edges,tsk_num,num_rels,wkr_num):
+# calculating r
+# false = 0
+    r = np.zeros((tsk_num, num_rels))
+    for i in range(tsk_num):
+        label_i = list(edges[:, i])
+        label_il = {}
+        # print('true label:',true_labels[i])
+        for l in range(num_rels):
+            label_il[l] = label_i.count(float(l))
+            # print('选择label ',l,' 的次数是：',label_il[l])
+            r[i][l] = label_il[l] / wkr_num
+
+    return r
+
+
+
 def read_duck():
     print("[ data ] Now reading the Duck dataset...")
     f=open("./ducks/labels.txt")
@@ -92,7 +109,7 @@ def read_BlueBirds():
     TrueLabels=np.zeros(len(imgIds))
     for i in range(len(imgIds)):
         TrueLabels[i]=gtLabels[imgId2Idx[i]]
-    return Graph2Edgelist(Graph),147,2,39,TrueLabels,"bluebird"
+    return Graph2Edgelist(Graph),147,2,39,TrueLabels,"bluebird",Graph2r(Graph,len(imgIds),2,len(wkrIds))
 
 def read_Websites():
 
@@ -122,7 +139,7 @@ def read_Websites():
                     Graph[i][j]=k
     print(Graph.shape)
     print("[ data ] Building finished.")
-    return Graph2Edgelist(Graph),n_samples+source_num,5,source_num,true_labels,"web"
+    return Graph2Edgelist(Graph),n_samples+source_num,5,source_num,true_labels,"web",Graph2r(Graph,n_samples,5,source_num)
 
 def read_Flowers():
 
@@ -180,4 +197,3 @@ def comp_deg_norm(g):
     norm[np.isinf(norm)] = 0
     return norm
 
-read_BlueBirds()

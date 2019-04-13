@@ -11,25 +11,23 @@ import matplotlib
 
 class GladLayer(nn.Module):
 
-    def __init__(self, num_nodes,wkr_feat, tsk_feat, num_rels, wkr_num, num_bases=-1, bias=None,
+    def __init__(self, num_nodes,wkr_feat, tsk_feat, num_rels, wkr_num, bias=None,
                  activation=None, is_input_layer=False):
         super(GladLayer, self).__init__()
         self.wkr_feat = wkr_feat
         self.tsk_feat = tsk_feat
         self.num_nodes=num_nodes
         self.num_rels = num_rels
-        self.num_bases = num_bases
         self.wkr_num = wkr_num
         self.tsk_num = num_nodes-wkr_num
-        if self.num_bases <= 0 or self.num_bases > self.num_rels:
-            self.num_bases = self.num_rels
+
         # 这个地方，bases便是边的类别，用于后面的weight的定义
 
         # add basis weights
-        self.weight_worker = nn.Parameter(torch.Tensor(self.num_bases, self.tsk_feat,
+        self.weight_worker = nn.Parameter(torch.Tensor(self.num_rels, self.tsk_feat,
                                                        self.wkr_feat))
         # 参数weight。有边的类别个矩阵，每个矩阵大小为[in_feat,out_feat]
-        self.weight_task = nn.Parameter(torch.Tensor(self.num_bases, self.wkr_feat,
+        self.weight_task = nn.Parameter(torch.Tensor(self.num_rels, self.wkr_feat,
                                                      self.tsk_feat))
         nn.init.xavier_uniform_(self.weight_worker,
                                 gain=nn.init.calculate_gain('relu'))
@@ -47,6 +45,7 @@ class GladLayer(nn.Module):
 
         wkr_weight_type = self.weight_worker[edges.data['type']]
         tsk_weight_type = self.weight_task[edges.data['type']]
+
         # print('edges.data[type]',type(edges.data['type']),edges.data['type'].shape,edges.data['type'])
 
 
@@ -55,9 +54,9 @@ class GladLayer(nn.Module):
         # 对权重进行选择
         # print(edges.src['labels'])
 
-        update_wkr_feature = torch.div(torch.bmm(edges.src['labels'], (wkr_weight_type)), edges.dst['deg'])
+        update_wkr_feature = torch.div(torch.matmul(edges.src['labels'], (wkr_weight_type)), edges.dst['deg'])
         # 这个地方给每个量除以了出度，直接相加就行
-        update_tsk_feature = torch.bmm(edges.src['ability'], (tsk_weight_type))
+        update_tsk_feature = torch.matmul(edges.src['ability'], (tsk_weight_type))
         # print("[ *** ] update_wkr_feature_shape = ",update_wkr_feature)
 
         # 这个地方对每个边都采样，所以很多的起始点是一样的，值也一样
@@ -71,13 +70,14 @@ class GladLayer(nn.Module):
         # print('!!',torch.sum(nodes.mailbox['labels'],dim=1).data,torch.sum(nodes.mailbox['labels'],dim=1).data.shape)
         # print('====',F.softmax(torch.sum(nodes.mailbox['labels'], dim=1),dim=2))
         #print(nodes.data['labels'].shape)
-
-        return {'labels': torch.sum(nodes.mailbox['msg_labels'], dim=1),
-                'ability': F.sigmoid(torch.sum(nodes.mailbox['msg_ability'], dim=1))}
         # return {'labels': F.sigmoid(torch.sum(nodes.mailbox['msg_labels'], dim=1)),
         #         'ability': F.sigmoid(torch.sum(nodes.mailbox['msg_ability'], dim=1))}
-        # return {'labels': torch.sum(nodes.mailbox['msg_labels'], dim=1),
-        #         'ability': torch.sum(nodes.mailbox['msg_ability'], dim=1)}
+        # return {'labels': torch.softmax(torch.sum(nodes.mailbox['msg_labels'], dim=1),dim=2),
+        #         'ability': F.sigmoid((torch.sum(nodes.mailbox['msg_ability'], dim=1)))}
+        return {'labels': torch.sum(nodes.mailbox['msg_labels'], dim=1),
+                'ability': torch.sum(nodes.mailbox['msg_ability'], dim=1)}
 
     def forward(self, g):
+        # print('weight_worker',self.weight_worker)
+        # print('weight_task', self.weight_task)
         g.update_all(message_func=self.msg_func, reduce_func=self.red_func)

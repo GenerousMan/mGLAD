@@ -22,6 +22,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from utils import *
 
+# torch.manual_seed(123345)
 
 # 要注意，本部分代码的设置如下：
 #  1.输入的边信息是双向的，所有wkr,tsk都有两向连接关系，
@@ -43,7 +44,7 @@ class GLADLinkPredict(nn.Module):
     # TODO 2: 改变中间的层结构，将latent variable赋予真实意义，即worker['label']里的message必须有存在意义
     # TODO 3: 改变loss定义函数。将edge 的类别算入考虑
 
-    def __init__(self, num_nodes, wkr_num, wkr_dim, tsk_dim, num_rels, num_bases=-1,
+    def __init__(self, num_nodes, wkr_num, wkr_dim, tsk_dim, num_rels, r,
                  num_hidden_layers=1, dropout=0, use_cuda=False, reg_param=0):
         super(GLADLinkPredict, self).__init__()
         self.wkr_dim = wkr_dim
@@ -52,16 +53,20 @@ class GLADLinkPredict(nn.Module):
         self.num_rels = num_rels
         self.mGLAD = mGLAD(num_nodes=num_nodes, wkr_num=wkr_num, wkr_dim=self.wkr_dim, tsk_dim=self.tsk_dim,
                            num_rels=self.num_rels)
+        self.r = r
 
         self.reg_param = reg_param
-        self.w_relation = nn.Parameter(torch.Tensor(wkr_dim, 1))
-        self.bias = nn.Parameter(torch.Tensor(1,1))
+
+        self.w_relation = nn.Parameter(torch.Tensor(wkr_dim, num_rels))  # D*L
+        self.bias = nn.Parameter(torch.Tensor(1, num_rels))  # 1*L
+
+        self.pi = nn.Parameter(torch.Tensor(num_rels, num_rels))
+
         nn.init.xavier_uniform_(self.w_relation,
                                 gain=nn.init.calculate_gain('relu'))
         nn.init.xavier_uniform_(self.bias, gain=nn.init.calculate_gain('relu'))
 
-
-
+        nn.init.xavier_uniform_(self.pi, gain=nn.init.calculate_gain('relu'))
 
     def calc_score(self, nodes, triplets):
         # DistMult
@@ -76,56 +81,67 @@ class GLADLinkPredict(nn.Module):
         # 之后要取出里面所有指定的label feature
 
         wkr = triplets[:, 0]
+        rel = triplets[:, 1]
         # print(wkr.shape)
         # 所有的wkr节点编号，一个list，
         # 将所有ability feature取出
         # print(nodes)
-        nodes['labels'] = F.softmax(nodes['labels'], dim=2)
-        #print(nodes['labels'])
 
-        wkr_feature = nodes['ability'][torch.from_numpy(wkr.astype(int)).long()]
+        nodes['labels'] = F.softmax(nodes['labels'], dim=2)
+        # print(nodes['labels'])
+        # print(nodes['labels'])
+
+        wkr_feature = nodes['ability'][torch.from_numpy(wkr.astype(int)).long()]    # [4212,1,300]  a_j
+        wkr_feature = nodes['ability'][torch.from_numpy(wkr.astype(int)).long()]    # [4212,1,300]  a_j
         # print("[ *** ] worker 's features now we choose is:", wkr_feature)
-        # print(wkr_feature.shape)
+        # print('wkr_feature.shape',wkr_feature.shape)
         # tsk_feature = nodes['labels'][torch.from_numpy(tsk.astype(int)).long(), :, relation]
-        tsk_feature = nodes['labels'][torch.from_numpy(tsk.astype(int)).long()]
-        #print('tau',tsk_feature)
+        tsk_feature = nodes['labels'][torch.from_numpy(tsk.astype(int)).long()]   # tau_i
         # print("[ *** ] task 's features  now are:", nodes['labels'][torch.from_numpy(tsk.astype(int)).long(),:,relation].data)
 
-        score_part1 = torch.sigmoid((torch.matmul(wkr_feature, self.w_relation) + self.bias))
+        # score_part1 = torch.sigmoid(torch.matmul(wkr_feature, self.w_relation) + self.bias)
 
-        # print("[ *** ] wkr feature is: ",nodes['ability'])
-        # print("[ *** ] after choosing:",wkr_feature)
-        # print("[ *** ] w relation is: ", self.w_relation)
-        # print("[ *** ] before sigmoid:",(torch.matmul(wkr_feature,self.w_relation)+self.bias))
-        score_part2 = (1 - score_part1) / (self.num_rels - 1)
-        # print('score_part1',score_part1.shape,score_part1)  #[4212,1,1]
-        # print('tsk_feature',tsk_feature.shape,tsk_feature)  #[4212,1,2]
+        edges_index = [i for i in range(wkr_feature.shape[0])]
 
-        score = torch.matmul(score_part1,tsk_feature)+torch.matmul(score_part2,(1-tsk_feature))
-        #print("[ *** ] score's shape:", score)
+
+
+        tmp = torch.softmax((torch.matmul(wkr_feature, self.w_relation) + self.bias),
+                           dim=2)  # dimension确认一下  [4212, 1, 2]
+
+        tmp = tmp.squeeze() # 4212*2
+
+        softmax_l = tmp[edges_index,list(rel.astype(int))].unsqueeze(1)  # 4212*1
+
+        tau_il = tsk_feature.squeeze()[edges_index,list(rel.astype(int))].unsqueeze(1)   # 4212*1
+
+        score_part2 = (1 - softmax_l) / (self.num_rels - 1)
+
+
+        # print('tau_il',tau_il)
+        score = tau_il.mul(softmax_l) + (1 - tau_il).mul(score_part2)    # 4212*1  点乘
+
+
+        # print("[ part 2] :", torch.matmul(score_part2, (1 - tsk_feature)))
+        # print("[ *** ] score's shape:", score)
         # score = torch.pow(score_part1, tsk_feature) + torch.pow(score_part2, 1 - tsk_feature)
 
         # TODO: 要检查本部分代码正确性。因为是批处理，所以需要小心维度等信息
 
         return score
 
-
-
-
-
     def forward(self, g):
         return self.mGLAD.forward(g)
 
-    def evaluate(self, g):
-        # get embedding and relation weight without grad
-        embedding = self.forward(g)
-        return embedding, self.w_relation
+    # def evaluate(self, g):
+    #     # get embedding and relation weight without grad
+    #     embedding = self.forward(g)
+    #     return embedding, self.w_relation
 
     def regularization_loss(self, embedding):
         return torch.mean(embedding.pow(2)) + torch.mean(self.w_relation.pow(2))
 
     def get_loss(self, g, triplets):
-        #TODO 这边还有问题，把所有p(y_ji)都加上了，应该改成 p(y_ji=l)
+        # TODO
         # triplets is a list of data samples (positive and negative)
         # each row in the triplets is a 3-tuple of (source, relation, destination)
         embedding = self.forward(g)
@@ -134,30 +150,54 @@ class GLADLinkPredict(nn.Module):
         # print(score)
         # predict_loss = -1 * torch.sum(torch.log(score))
         # print(predict_loss)
-        relation=triplets[:,1]
-        relation.shape=[-1,1]
-        #print(relation.shape)
-        score = self.calc_score(embedding,triplets)
-        predict_edge=np.argmax(score.detach().numpy(),axis=2)
-        #print(predict_edge.shape)
-        predict_edge_acc=np.equal(predict_edge,relation).sum()/predict_edge.shape[0]
-        print("[ data ] Predict edge's accuracy: ",predict_edge_acc)
+        relation = triplets[:, 1]
+        tsk = triplets[:, 2]
+        relation.shape = [-1, 1]
+        # print(relation.shape)
+        score = self.calc_score(embedding, triplets)
 
-        score=torch.squeeze(score,1)
-        mask=torch.zeros(len(triplets),self.num_rels).scatter_(1, torch.LongTensor(relation), 1)
-        #print(mask.shape)
+        # print('score',score)   # 一路上涨直到全为1
 
-        #score=score[:,0,relation]
-        #print(score)
-        #mask=torch.unsqueeze(mask, 1)
-        #print(mask)
-        #print(score)
-        #print(score*mask)
-        predict_loss = -1 * torch.sum(torch.log(score).mul(mask))
-        #print('predict_loss',predict_loss.shape,predict_loss)  #[4212,1,2]
+        print('tau',embedding['labels'][torch.from_numpy(tsk.astype(int)).long()]) # 原本tau为(0,1)也可能变为(1,0)，然后全部的tau都变成(1,0)
+
+        # predict_edge = np.argmax(score.detach().numpy(), axis=2)
+        # print(predict_edge.shape)
+        # predict_edge_acc = np.equal(predict_edge, relation).sum() / predict_edge.shape[0]
+        predict_edge_acc = len([i for i in list(score) if i > 0.5]) / score.shape[0]
+        # print(score)
+        print("[ data ] Predict edge's accuracy: ", predict_edge_acc)
+
+
+
+
+        # score = torch.squeeze(score, 1)
+        # mask = torch.zeros(len(triplets), self.num_rels).scatter_(1, torch.LongTensor(relation), 1)
+        # print(mask.shape)
+
+        # score=score[:,0,relation]
+        # print(score)
+        # mask=torch.unsqueeze(mask, 1)
+        # print(mask)
+        # print(score)
+        # print(score*mask)
+        # predict_loss = -1 * torch.sum(torch.log(score + 1e-5).mul(mask))
+        predict_loss = -1 * torch.sum(torch.log(score))
+
+        # print('score',score.shape,score)
+        # print('predict_loss',predict_loss)
+
+        # print('predict_loss',predict_loss.shape,predict_loss)  #[4212,1,2]
+
+        reg_loss = self.regularization_loss(embedding['labels'])
+
+        entropy = nn.CrossEntropyLoss()
+        kl_loss = entropy(embedding['labels'][self.wkr_num:], torch.LongTensor(self.r))
+
+        loss = predict_loss + 0.005 * reg_loss #+ 0.0001 * kl_loss
 
         # reg_loss = self.regularization_loss(embedding)
-        return embedding, predict_loss,predict_edge_acc
+        return embedding, loss, predict_edge_acc
+        # return embedding, loss
 
 
 def draw(edge_acc, acc, loss, name):
@@ -174,13 +214,13 @@ def draw(edge_acc, acc, loss, name):
     ax2.plot(x, y2, label='loss')
     ax1.plot(x, y3, label='edge acc')
 
-    #plt.show()
-    plt.savefig(name+".png")
+    # plt.show()
+    plt.savefig(name + ".png")
 
 
 def main(args):
     # load graph data
-    data, num_nodes, num_rels, wkr_num, true_labels, name = read_Websites()
+    data, num_nodes, num_rels, wkr_num, true_labels, name, r = read_BlueBirds()
     # TODO: 数据集部分需要修改，
     #  此处数据集的形状： [ src node, type, dest node ]。
     #  基本上就是[ worker, type, task ]，
@@ -205,11 +245,11 @@ def main(args):
                             tsk_dim=num_rels,
                             wkr_num=wkr_num,
                             num_rels=num_rels,
-                            num_bases=args.n_bases,
                             num_hidden_layers=args.n_layers,
                             dropout=args.dropout,
                             use_cuda=use_cuda,
-                            reg_param=args.regularization)
+                            reg_param=args.regularization,
+                            r=r)
 
     # validation and testing triplets
     valid_data = torch.LongTensor(valid_data)
@@ -218,7 +258,7 @@ def main(args):
     # optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
-    model_state_file = name+".pth"#'model_state.pth'
+    model_state_file = name + ".pth"  # 'model_state.pth'
     forward_time = []
     backward_time = []
 
@@ -232,17 +272,15 @@ def main(args):
     triplets = (data[:, 0], data[:, 1], data[:, 2])
     loss_all = []
     acc_all = []
-    edge_all=[]
+    edge_all = []
 
     # print("[ *** ]triplets: ", triplets)
     if use_cuda:
         model.cuda()
 
-    if(os.path.isfile(name+".pkl")):
-        model.load_state_dict(torch.load(name+".pkl"))
-        print("[ model ]model loaded")
-
-
+    # if (os.path.isfile(name + ".pkl")):
+    #     model.load_state_dict(torch.load(name + ".pkl"))
+    #     print("[ model ]model loaded")
 
     while True:
         model.train()
@@ -273,10 +311,13 @@ def main(args):
         t0 = time.time()
 
         embedding, loss, edge_acc = model.get_loss(g, data)
+        # embedding, loss = model.get_loss(g, data)
         # 这个地方的data是单向图，并不存在反向边
-        predict_label = np.argmin(embedding['labels'][range(wkr_num, num_nodes)].detach().numpy(), axis=2)
+        # print('labels',embedding['labels'][range(wkr_num, num_nodes)].detach().numpy())
+        predict_label = np.argmax(embedding['labels'][range(wkr_num, num_nodes)].detach().numpy(), axis=2)
+        # print('predict_label',predict_label)
         # print("[ data ] Each Wkr features: ",embedding['ability'])
-        #print("[ data ] Each Tsk features: ", embedding['labels'])
+        # print("[ data ] Each Tsk features: ", embedding['labels'])
         predict_label.shape = num_nodes - wkr_num
         true_labels.shape = num_nodes - wkr_num
         mrr = np.sum(np.equal(predict_label, true_labels)) / (num_nodes - wkr_num)
@@ -284,7 +325,7 @@ def main(args):
         loss_all.append(loss)
         edge_all.append(edge_acc)
 
-        print("[ data ] Predict label's accuracy: ",mrr)
+        print("[ data ] Predict label's accuracy: ", mrr)
 
         if mrr > best_mrr:
             best_mrr = mrr
@@ -310,12 +351,11 @@ def main(args):
 
         optimizer.zero_grad()
 
-        if epoch % 200 ==0 :
-            torch.save(model.state_dict(), name+".pkl")#draw(np.array(acc_all),np.array(loss_all))
+        if epoch % 200 == 0:
+            torch.save(model.state_dict(), name + ".pkl")  # draw(np.array(acc_all),np.array(loss_all))
             print("[ model ] model saved.")
-            draw(np.array(edge_all),np.array(acc_all), np.array(loss_all),name)
+            draw(np.array(edge_all), np.array(acc_all), np.array(loss_all), name)
             print("[ data ] draw finished.")
-
 
         if epoch >= args.n_epochs:
             torch.save({'state_dict': model.state_dict(), 'epoch': epoch},
@@ -335,7 +375,7 @@ if __name__ == '__main__':
                         help="number of hidden units")
     parser.add_argument("--gpu", type=int, default=-1,
                         help="gpu")
-    parser.add_argument("--lr", type=float, default=1e-5,  # lr
+    parser.add_argument("--lr", type=float, default=1e-3,  # lr
                         help="learning rate")
     parser.add_argument("--n-bases", type=int, default=200,
                         help="number of weight blocks for each relation")
