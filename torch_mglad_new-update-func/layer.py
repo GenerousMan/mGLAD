@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 
 
 class MGLADlayer(nn.Module):
@@ -17,53 +16,54 @@ class MGLADlayer(nn.Module):
 
         # self.weight_worker = nn.Parameter(torch.Tensor(num_rels, tsk_dim, wkr_dim))
         # self.weight_task = nn.Parameter(torch.Tensor(num_rels, wkr_dim, tsk_dim))
-        self.e = nn.Parameter(torch.Tensor(num_rels, 1, e_dim))  # 1*k维
+
         self.mlp_tsk = MLP(tsk_dim + e_dim, tsk_dim)
         self.mlp_tsk_inner = MLP(wkr_dim + e_dim, e_dim)
 
         self.mlp_wkr = MLP(wkr_dim + e_dim, wkr_dim)
         self.mlp_wkr_inner = MLP(tsk_dim + e_dim, e_dim)
 
+        self.e = nn.Parameter(torch.Tensor(num_rels, 1, e_dim))  # 1*k维
+        nn.init.xavier_uniform_(self.e, gain=nn.init.calculate_gain('relu'))
         # nn.init.xavier_uniform_(self.weight_worker, gain=nn.init.calculate_gain('relu'))
         # nn.init.xavier_uniform_(self.weight_task, gain=nn.init.calculate_gain('relu'))
 
     def forward(self, g):
+
         def msg_func_wkr(edges):
-            tau_i = edges.src['labels'].squeeze()  # 4212,2
-            e_l = self.e[edges.data['type'].long()].squeeze()  # 4212,e_dim
+            tau_i = edges.src['labels'].squeeze(dim=1)  # 4212,2
+            e_l = self.e[edges.data['type'].long()].squeeze(dim=1)  # 4212,e_dim
             msg = self.mlp_wkr_inner(torch.cat((tau_i, e_l), dim=1).unsqueeze(1))  # 4212,1,e_dim
             return {'msg_ability': msg}
 
         def red_func_wkr(nodes):
-            M_i = torch.div(torch.sum(nodes.mailbox['msg_ability'], dim=1), nodes.data['deg']).squeeze()  # 求mean
-            a_j = nodes.data['ability'].squeeze()
+            M_i = torch.div(torch.sum(nodes.mailbox['msg_ability'], dim=1), nodes.data['deg']).squeeze(dim=1)  # 求mean
+            a_j = nodes.data['ability'].squeeze(dim=1)
             return {'ability': self.mlp_wkr(torch.cat((a_j, M_i), dim=1).unsqueeze(1))}
 
         def msg_func_tsk(edges):
-            a_j = edges.src['ability'].squeeze()
-            e_l = self.e[edges.data['type'].long()].squeeze()
+            a_j = edges.src['ability'].squeeze(dim=1)
+            e_l = self.e[edges.data['type'].long()].squeeze(dim=1)
             msg = self.mlp_tsk_inner(torch.cat((a_j, e_l), dim=1).unsqueeze(1))
             return {'msg_tau': msg}
 
         def red_func_tsk(nodes):
-            M_i = torch.div(torch.sum(nodes.mailbox['msg_tau'], dim=1), nodes.data['deg']).squeeze()  # 求mean
-            tau_i = nodes.data['labels'].squeeze()
+            M_i = torch.div(torch.sum(nodes.mailbox['msg_tau'], dim=1), nodes.data['deg']).squeeze(dim=1)  # 求mean
+            tau_i = nodes.data['labels'].squeeze(dim=1)
             return {'labels': self.mlp_tsk(torch.cat((tau_i, M_i), dim=1).unsqueeze(1))}
 
         # 更新 worker 的特征
         g.register_message_func(msg_func_wkr)
         g.register_reduce_func(red_func_wkr)
-        g.push(g.nodes()[range(self.num_wkr, self.num_nodes)])  # push tsk 节点的msg
         g.pull(g.nodes()[range(self.num_wkr)])  # pull 到 wkr 节点
 
         # 更新 task 的特征
         g.register_message_func(msg_func_tsk)
         g.register_reduce_func(red_func_tsk)
-        g.push(g.nodes()[range(self.num_wkr)])  # push wkr 节点的msg
         g.pull(g.nodes()[range(self.num_wkr, self.num_nodes)])  # pull 到 tsk 节点
 
-        for param in self.mlp_wkr.named_parameters():
-            print(param)
+        # for param in self.mlp_wkr.named_parameters():
+        #     print(param)
 
 
 class MLP(nn.Module):
@@ -74,4 +74,3 @@ class MLP(nn.Module):
 
     def forward(self, d_input):
         return F.relu(self.fc(d_input))
-

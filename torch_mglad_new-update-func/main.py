@@ -56,6 +56,7 @@ class GLADLinkPredict(nn.Module):
 
         # 这里对tau做softmax
         ndata_['labels'] = F.softmax(ndata_['labels'], dim=2)
+        print('labels:',ndata_['labels'])
 
         wkr_feature = ndata_['ability'][torch.from_numpy(wkr.astype(int)).long()].squeeze()  # [4212,1,300]  a_j
         tsk_feature = ndata_['labels'][torch.from_numpy(tsk.astype(int)).long()].squeeze()  # tau_i
@@ -126,7 +127,10 @@ def draw(edge_acc, acc, loss, dataset_name):
 
 
 def main(args):
-    data, num_nodes, num_rels, num_wkr, num_tsk, true_labels, name, mv_results = read_BlueBirds()
+    # data, num_nodes, num_rels, num_wkr, num_tsk, true_labels, name, mv_results = read_BlueBirds()
+    # data, num_nodes, num_rels, num_wkr, num_tsk, true_labels, name, mv_results = read_Flowers()
+    data, num_nodes, num_rels, num_wkr, num_tsk, true_labels, name, mv_results = read_Websites()
+    # data, num_nodes, num_rels, num_wkr, num_tsk, true_labels, name, mv_results = read_duck()
     use_cuda = args.gpu >= 0 and torch.cuda.is_available()
     if use_cuda:
         torch.cuda.set_device(args.gpu)

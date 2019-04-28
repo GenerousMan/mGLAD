@@ -62,7 +62,7 @@ def read_BlueBirds():
     TrueLabels = np.zeros(len(imgIds))
     for i in range(len(imgIds)):
         TrueLabels[i] = gtLabels[imgId2Idx[i]]
-    return Graph2Edgelist(Graph), 147, 2, 39,108, TrueLabels, "bluebird", Graph2r(Graph, len(imgIds), 2, len(wkrIds))
+    return Graph2Edgelist(Graph), 147, 2, 39, 108, TrueLabels, "bluebird", Graph2r(Graph, len(imgIds), 2, len(wkrIds))
 
 
 def read_duck():
@@ -120,8 +120,38 @@ def read_Websites():
                     Graph[i][j] = k
     print(Graph.shape)
     print("[ data ] Building finished.")
-    return Graph2Edgelist(Graph), n_samples + source_num, 5, source_num, n_samples, true_labels, "web", Graph2r(Graph, n_samples,
-                                                                                                     5, source_num)
+    return Graph2Edgelist(Graph), n_samples + source_num, 5, source_num, n_samples, true_labels, "web", Graph2r(Graph,
+                                                                                                                n_samples,
+                                                                                                                5,
+                                                                                                                source_num)
+
+def read_BlueBirds():
+    # 构建整幅图，39*104
+    # 返回图的邻接矩阵
+    print("[ data ] Now loading blueBirds dataset......")
+    numTrial = 40
+    f = open("./bluebirds/gt.yaml")
+    gtLabels = yaml.load(f)
+    imgIds = gtLabels.keys();
+    numImg = len(gtLabels)
+    imgId2Idx = dict((idx, id) for (idx, id) in enumerate(imgIds))
+    data = yaml.load(open("./bluebirds/labels.yaml"))
+    dinfo = {'numImg': numImg, 'numTrial': numTrial}
+    dinfo['gt'] = [gtLabels[id] for id in imgIds]
+    wkrIds = data.keys();
+    wkrId2Idx = dict((idx, id) for (idx, id) in enumerate(wkrIds))
+    print("[ data ] Dataset has ", len(wkrIds), " woker nodes, ", len(imgIds), "task nodes.")
+    print("[ data ] Now building the original graph......")
+    Graph = np.zeros((len(wkrIds), len(imgIds)))
+    for i in range(len(wkrIds)):
+        for j in range(len(imgIds)):
+            Graph[i][j] = int(data[wkrId2Idx[i]][imgId2Idx[j]])
+    print("[ data ] Build Graph Finished. ")
+    print("[ data ] Now get the true labels...")
+    TrueLabels = np.zeros(len(imgIds))
+    for i in range(len(imgIds)):
+        TrueLabels[i] = gtLabels[imgId2Idx[i]]
+    return Graph2Edgelist(Graph), 147, 2, 39, 108, TrueLabels, "bluebird", Graph2r(Graph, len(imgIds), 2, len(wkrIds))
 
 
 def read_Flowers():
